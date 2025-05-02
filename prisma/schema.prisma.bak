@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  username        String    @unique
+  twitterUsername String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  rules           TrackingRule[]
+  notifications   Notification[]
+  channels        NotificationChannel[]
+
+  @@map("users")
+}
+
+model TrackingRule {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  description String
+  criteria    String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+  tweets      Tweet[]
+
+  @@map("tracking_rules")
+}
+
+model Tweet {
+  id            String    @id @default(cuid())
+  tweetId       String    @unique
+  authorId      String
+  content       String
+  createdAt     DateTime  @default(now())
+  matchedRuleId String
+
+  rule          TrackingRule @relation(fields: [matchedRuleId], references: [id])
+  analysis      TweetAnalysis?
+  notifications Notification[]
+
+  @@map("tweets")
+}
+
+model TweetAnalysis {
+  id             String    @id @default(cuid())
+  tweetId        String    @unique
+  relevanceScore Float
+  analysisResult String
+  createdAt      DateTime  @default(now())
+
+  tweet          Tweet     @relation(fields: [tweetId], references: [id])
+
+  @@map("tweet_analyses")
+}
+
+model NotificationChannel {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  config    Json
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id])
+  notifications Notification[]
+
+  @@map("notification_channels")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  channelId String
+  tweetId   String
+  status    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User               @relation(fields: [userId], references: [id])
+  channel   NotificationChannel @relation(fields: [channelId], references: [id])
+  tweet     Tweet              @relation(fields: [tweetId], references: [id])
+
+  @@map("notifications")
+} 
+
