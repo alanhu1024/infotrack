@@ -36,7 +36,9 @@ export default function RuleList({ rules }: RuleListProps) {
           {rules.map((rule) => (
             <tr key={rule.id}>
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {rule.name}
+                <a href={`/rules/${rule.id}`} className="text-gray-900 hover:text-indigo-600">
+                  {rule.name}
+                </a>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 {rule.twitterUsername}
@@ -60,7 +62,10 @@ export default function RuleList({ rules }: RuleListProps) {
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 {format(new Date(rule.createdAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600 hover:text-indigo-900">
+              <td className="px-6 py-4 whitespace-nowrap text-sm space-x-4">
+                <a href={`/rules/${rule.id}`} className="text-indigo-600 hover:text-indigo-900">
+                  查看
+                </a>
                 <a href={`/rules/${rule.id}/edit`} className="text-indigo-600 hover:text-indigo-900">
                   编辑
                 </a>
