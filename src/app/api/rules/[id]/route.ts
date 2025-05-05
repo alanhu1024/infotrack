@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { trackingService } from '@/services/tracking';
+import { twitterServiceSingleton } from '@/services/twitter';
+import { AIService } from '@/services/ai';
 
 const updateRuleSchema = z.object({
   name: z.string().min(1, '规则名称不能为空'),
@@ -11,6 +14,8 @@ const updateRuleSchema = z.object({
   criteria: z.string().min(1, '筛选标准不能为空'),
   isActive: z.boolean(),
   pollingInterval: z.number().min(60).max(3600),
+  llmProvider: z.string().min(1, '大模型类型不能为空'),
+  llmApiKey: z.string().optional(),
 });
 
 export async function PUT(
@@ -19,56 +24,44 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: '未登录或会话已过期' },
-        { status: 401 }
-      );
+    if (!session?.user) {
+      return NextResponse.json({ error: '未授权' }, { status: 401 });
     }
 
-    const rule = await prisma.trackingRule.findUnique({
-      where: { id: params.id },
+    const data = await request.json();
+    const { timeSlots, ...ruleData } = updateRuleSchema.parse(data);
+
+    // 更新规则基本信息
+    const rule = await prisma.trackingRule.update({
+      where: {
+        id: params.id,
+        userId: session.user.id,
+      },
+      data: ruleData,
     });
 
-    if (!rule) {
-      return NextResponse.json(
-        { error: '规则不存在' },
-        { status: 404 }
-      );
-    }
-
-    if (rule.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: '无权修改此规则' },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
-    const validatedData = updateRuleSchema.parse(body);
-
-    // 只更新规则本身
-    const updatedRule = await prisma.trackingRule.update({
-      where: { id: params.id },
-      data: {
-        name: validatedData.name,
-        description: validatedData.description || '',
-        criteria: validatedData.criteria,
-        isActive: validatedData.isActive,
-        twitterUsername: validatedData.twitterUsername,
-        pollingInterval: validatedData.pollingInterval,
+    // 删除现有的时间段
+    await prisma.trackingTimeSlot.deleteMany({
+      where: {
+        ruleId: params.id,
       },
     });
 
-    return NextResponse.json(updatedRule);
-  } catch (error) {
-    console.error('Error updating rule:', error);
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: '输入验证失败', details: error.errors },
-        { status: 400 }
-      );
+    // 创建新的时间段
+    if (timeSlots && timeSlots.length > 0) {
+      await prisma.trackingTimeSlot.createMany({
+        data: timeSlots.map((slot: any) => ({
+          ruleId: params.id,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          pollingInterval: slot.pollingInterval,
+        })),
+      });
     }
+
+    return NextResponse.json(rule);
+  } catch (error) {
+    console.error('更新规则失败:', error);
     return NextResponse.json(
       { error: '更新规则失败' },
       { status: 500 }
@@ -77,71 +70,42 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ success: false, message: '未授权' }, { status: 401 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: '未登录或会话已过期' },
-        { status: 401 }
-      );
-    }
-
+    const id = params.id;
+    
+    // 获取规则
     const rule = await prisma.trackingRule.findUnique({
-      where: { id: params.id },
+      where: { id }
     });
-
+    
     if (!rule) {
-      return NextResponse.json(
-        { error: '规则不存在' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, message: '规则不存在' }, { status: 404 });
     }
-
+    
+    // 确保用户只能管理自己的规则
     if (rule.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: '无权删除此规则' },
-        { status: 403 }
-      );
+      return NextResponse.json({ success: false, message: '无权限' }, { status: 403 });
     }
-
-    // 删除规则及相关数据
-    await prisma.$transaction([
-      // 删除相关的通知
-      prisma.notification.deleteMany({
-        where: {
-          tweet: {
-            matchedRuleId: params.id,
-          },
-        },
-      }),
-      // 删除相关的推文分析
-      prisma.tweetAnalysis.deleteMany({
-        where: {
-          tweet: {
-            matchedRuleId: params.id,
-          },
-        },
-      }),
-      // 删除相关的推文
-      prisma.tweet.deleteMany({
-        where: {
-          matchedRuleId: params.id,
-        },
-      }),
-      // 删除规则
-      prisma.trackingRule.delete({
-        where: { id: params.id },
-      }),
-    ]);
-
-    return NextResponse.json({ success: true });
+    
+    // 停止追踪
+    await trackingService.stopTracking(rule);
+    
+    // 删除规则和相关数据
+    await trackingService.deleteRule(id);
+    
+    return NextResponse.json({ success: true, message: '规则已删除' });
   } catch (error) {
-    console.error('Error deleting rule:', error);
+    console.error('删除规则失败:', error);
     return NextResponse.json(
-      { error: '删除规则失败' },
+      { success: false, message: '删除规则失败', error: String(error) },
       { status: 500 }
     );
   }

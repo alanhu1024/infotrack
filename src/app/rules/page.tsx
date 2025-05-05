@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import RuleList from '@/components/RuleList';
+import { RuleList } from '@/components/RuleList';
 import type { TrackingRule } from '.prisma/client';
 
 export const dynamic = 'force-dynamic';

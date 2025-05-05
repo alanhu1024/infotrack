@@ -1,5 +1,8 @@
 import { OpenAI } from 'openai';
 import { env } from '@/config/env';
+import { createLLMService } from '../llm';
+
+export const aiService = createLLMService();
 
 export class AIService {
   private client: OpenAI;

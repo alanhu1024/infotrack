@@ -2,9 +2,8 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { formatDate } from '@/lib/utils';
-import { TweetList } from '@/components/TweetList';
-import { NotificationList } from '@/components/NotificationList';
+import { formatDate } from '../../../lib/utils';
+import { TweetList } from '../../../components/TweetList';
 
 export default async function RuleDetailPage({
   params,
@@ -35,6 +34,7 @@ export default async function RuleDetailPage({
           createdAt: 'desc',
         },
       },
+      timeSlots: true,
     },
   });
 

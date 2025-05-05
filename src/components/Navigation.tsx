@@ -10,6 +10,7 @@ const Navigation = () => {
   const navItems = [
     { name: '首页', href: '/' },
     { name: '追踪规则', href: '/rules' },
+    { name: '定价', href: '/pricing' },
   ];
 
   return (

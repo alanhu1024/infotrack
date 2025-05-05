@@ -19,6 +19,8 @@ export interface TrackingRule {
   lastPolledAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  llmProvider: string;
+  llmApiKey: string;
 }
 
 export interface Tweet {

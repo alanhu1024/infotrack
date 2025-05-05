@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { trackingService } from '@/services/tracking';
+import { TwitterService, twitterServiceSingleton } from '@/services/twitter';
+import { AIService } from '@/services/ai';
+import { notificationServices } from '@/services/notification';
 
 const createRuleSchema = z.object({
   name: z.string().min(1, '规则名称不能为空'),
@@ -10,6 +14,8 @@ const createRuleSchema = z.object({
   twitterUsername: z.string().min(1, 'Twitter 用户名不能为空'),
   criteria: z.string().min(1, '筛选标准不能为空'),
   pollingInterval: z.number().min(60).max(3600),
+  llmProvider: z.string().min(1, '大模型类型不能为空'),
+  llmApiKey: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -37,8 +43,13 @@ export async function POST(request: Request) {
         isActive: true,
         pollingEnabled: true,
         pollingInterval: validatedData.pollingInterval,
+        llmProvider: validatedData.llmProvider,
+        llmApiKey: validatedData.llmApiKey || '',
       },
     });
+
+    // 使用trackingService单例启动轮询
+    await trackingService.startTracking(rule);
 
     return NextResponse.json(rule, { status: 201 });
   } catch (error) {

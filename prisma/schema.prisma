@@ -22,6 +22,7 @@ model User {
   notifications   Notification[]
   sessions        Session[]
   rules           TrackingRule[]
+  subscriptions   Subscription[]
 
   @@map("users")
 }
@@ -65,22 +66,38 @@ model VerificationToken {
 }
 
 model TrackingRule {
-  id              String    @id @default(cuid())
+  id              String            @id @default(cuid())
   userId          String
   name            String
   description     String
   criteria        String
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
   twitterUsername String
   lastPolledAt    DateTime?
-  pollingEnabled  Boolean   @default(true)
-  pollingInterval Int       @default(300)
-  user            User      @relation(fields: [userId], references: [id])
+  pollingEnabled  Boolean           @default(true)
+  pollingInterval Int               @default(300)
+  timeSlots       TrackingTimeSlot[]
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   tweets          Tweet[]
+  llmProvider     String            @default("openai")
+  llmApiKey       String            @default("")
 
   @@map("tracking_rules")
+}
+
+model TrackingTimeSlot {
+  id              String       @id @default(cuid())
+  ruleId          String
+  startTime       String       // 格式 "HH:mm" 如 "09:00"
+  endTime         String       // 格式 "HH:mm" 如 "18:00"
+  pollingInterval Int         // 该时间段的轮询间隔（秒）
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  rule            TrackingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@map("tracking_time_slots")
 }
 
 model Tweet {
@@ -92,7 +109,7 @@ model Tweet {
   matchedRuleId String
   notifications Notification[]
   analysis      TweetAnalysis?
-  rule          TrackingRule   @relation(fields: [matchedRuleId], references: [id])
+  rule          TrackingRule   @relation(fields: [matchedRuleId], references: [id], onDelete: Cascade)
 
   @@map("tweets")
 }
@@ -103,7 +120,7 @@ model TweetAnalysis {
   relevanceScore Float
   analysisResult String
   createdAt      DateTime @default(now())
-  tweet          Tweet    @relation(fields: [tweetId], references: [id])
+  tweet          Tweet    @relation(fields: [tweetId], references: [id], onDelete: Cascade)
 
   @@map("tweet_analyses")
 }
@@ -131,8 +148,48 @@ model Notification {
   createdAt DateTime            @default(now())
   updatedAt DateTime            @updatedAt
   channel   NotificationChannel @relation(fields: [channelId], references: [id])
-  tweet     Tweet               @relation(fields: [tweetId], references: [id])
+  tweet     Tweet               @relation(fields: [tweetId], references: [id], onDelete: Cascade)
   user      User                @relation(fields: [userId], references: [id])
 
   @@map("notifications")
+}
+
+model Subscription {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  plan              SubscriptionPlan
+  startDate         DateTime        @default(now())
+  endDate           DateTime?
+  isActive          Boolean         @default(true)
+  paymentId         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  paymentType       String          @default("monthly") // "monthly" 或 "annually"
+  monthlyRuleQuota  Int
+  monthlyNotifyQuota Int
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageStats        UsageStat[]
+
+  @@map("subscriptions")
+}
+
+model UsageStat {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  month          DateTime     // 存储年月，日期为1，如2023-05-01代表2023年5月
+  rulesUsed      Int          @default(0)
+  notificationsUsed Int       @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, month])
+  @@map("usage_stats")
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PRO
+  PREMIUM
 }

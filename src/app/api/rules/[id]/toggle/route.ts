@@ -1,52 +1,55 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth';
+import { prisma } from '@/lib/prisma';
+import { TrackingService, trackingService } from '@/services/tracking';
 import { authOptions } from '@/lib/auth';
 
-const prisma = new PrismaClient();
-
 export async function POST(
-  request: Request,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ success: false, message: '未授权' }, { status: 401 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: '未登录或会话已过期' },
-        { status: 401 }
-      );
-    }
-
+    const id = params.id;
+    
+    // 获取规则
     const rule = await prisma.trackingRule.findUnique({
-      where: { id: params.id },
+      where: { id },
+      include: { timeSlots: true },
     });
-
+    
     if (!rule) {
-      return NextResponse.json(
-        { error: '规则不存在' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, message: '规则不存在' }, { status: 404 });
     }
-
+    
+    // 确保用户只能管理自己的规则
     if (rule.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: '无权修改此规则' },
-        { status: 403 }
-      );
+      return NextResponse.json({ success: false, message: '无权限' }, { status: 403 });
     }
-
+    
     // 切换规则状态
     const updatedRule = await prisma.trackingRule.update({
-      where: { id: params.id },
+      where: { id },
       data: { isActive: !rule.isActive },
+      include: { timeSlots: true },
     });
-
-    return NextResponse.json(updatedRule);
+    
+    // 根据新状态启用或停用追踪
+    if (updatedRule.isActive) {
+      await trackingService.startTracking(updatedRule);
+    } else {
+      await trackingService.stopTracking(updatedRule);
+    }
+    
+    return NextResponse.json({ success: true, rule: updatedRule });
   } catch (error) {
     console.error('Error toggling rule:', error);
     return NextResponse.json(
-      { error: '切换规则状态失败' },
+      { success: false, message: '切换规则失败', error: String(error) },
       { status: 500 }
     );
   }

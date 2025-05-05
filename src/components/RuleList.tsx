@@ -1,4 +1,4 @@
-import type { TrackingRule } from '@prisma/client';
+import type { TrackingRule, TrackingTimeSlot } from '@/types';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -6,7 +6,7 @@ interface RuleListProps {
   rules: TrackingRule[];
 }
 
-export default function RuleList({ rules }: RuleListProps) {
+export function RuleList({ rules }: RuleListProps) {
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <table className="min-w-full divide-y divide-gray-200">
@@ -51,12 +51,21 @@ export default function RuleList({ rules }: RuleListProps) {
                 </span>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {rule.pollingEnabled ? (
-                  <span className="text-indigo-600">
-                    每 {Math.floor(rule.pollingInterval / 60)} 分钟
-                  </span>
+                {rule.timeSlots && rule.timeSlots.length > 0 ? (
+                  <div className="space-y-1">
+                    {rule.timeSlots.map((slot, index) => (
+                      <div key={slot.id} className="text-xs">
+                        {slot.startTime} - {slot.endTime}
+                        <span className="ml-2 text-gray-400">
+                          每 {slot.pollingInterval / 60} 分钟
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  <span className="text-gray-500">实时监听</span>
+                  <span>
+                    每 {rule.pollingInterval / 60} 分钟
+                  </span>
                 )}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

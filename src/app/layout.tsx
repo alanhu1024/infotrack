@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 import { Providers } from './providers';
 import { UserNav } from '@/components/user-nav';
 import Navigation from '@/components/Navigation';
+import InitializeServices from "@/components/InitializeServices";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -22,10 +23,11 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className={inter.className}>
         <Providers>
+          <InitializeServices />
           <div className="min-h-screen bg-gray-50">
             <Navigation />
             <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-              {children}
+            {children}
             </main>
           </div>
         </Providers>
