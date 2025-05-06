@@ -124,7 +124,6 @@ export class BaiduCallingService implements NotificationService {
       
       // 按照百度API文档格式构建请求参数
       const callParams = {
-        accessToken: token,  // 使用accessToken作为参数名，与获取到的字段名一致
         robotId: this.robotId,
         mobile: phoneNumber,               // 被叫号码
         callerNum: [this.callerNum],       // 主叫号码，使用数组形式
@@ -137,17 +136,23 @@ export class BaiduCallingService implements NotificationService {
       };
       
       console.log('[BaiduCallingService] 发送外呼请求:', JSON.stringify(callParams, null, 2));
+      console.log('[BaiduCallingService] 请求头:', JSON.stringify({
+        'Content-Type': 'application/json',
+        'Authorization': `${token.substring(0, 10)}...`  // 只记录部分token内容，保护隐私
+      }, null, 2));
       
       const response = await axios.post(
         callUrl,
         callParams,
         {
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': token  // 将token放在请求头的Authorization字段中
           }
         }
       );
       
+      console.log('[BaiduCallingService] 外呼响应状态:', response.status);
       console.log('[BaiduCallingService] 外呼响应:', JSON.stringify(response.data, null, 2));
       
       // 根据百度文档，成功响应code为200
