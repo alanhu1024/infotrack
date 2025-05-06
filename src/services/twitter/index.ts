@@ -80,7 +80,11 @@ export class TwitterService {
     text: string;
     authorId: string;
     createdAt: Date;
-  }) => Promise<void>): Promise<void> {
+  }) => Promise<{
+    matched: boolean;
+    score: number;
+    explanation: string;
+  } | void>): Promise<void> {
     const key = String(rule.id);
     console.log(`[TwitterService] startPolling 请求, key:`, key, typeof key);
     console.log(`[TwitterService] 当前所有定时器key (${this.pollingJobs.size}个):`, Array.from(this.pollingJobs.keys()));
@@ -157,6 +161,16 @@ export class TwitterService {
 
     const pollTweets = async () => {
       console.log(`[TwitterService] 正在轮询规则 ${key} (${rule.twitterUsername}) 的推文...`);
+      
+      // 创建一个数组用于记录本次轮询中满足规则的推文
+      const matchedTweets: Array<{
+        id: string;
+        text: string;
+        score: number;
+        explanation: string;
+      }> = [];
+      let matchedCount = 0;
+      
       try {
         // 检查规则是否仍然存在且激活
         try {
@@ -181,9 +195,47 @@ export class TwitterService {
         // 按时间正序处理推文
         const sortedTweets = tweets.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
         
-        for (const tweet of sortedTweets) {
-          await callback(tweet);
+        console.log(`[TwitterService] 获取到 ${sortedTweets.length} 条新推文`);
+        
+        // 创建一个包含回调函数处理结果的版本
+        const processWithResult = async (tweet: {
+          id: string;
+          text: string;
+          authorId: string;
+          createdAt: Date;
+        }) => {
+          // 调用原始回调并捕获返回值
+          const result = await callback(tweet);
+          
+          // 如果回调返回了匹配状态为true，说明满足规则
+          if (result && result.matched) {
+            matchedCount++;
+            matchedTweets.push({
+              id: tweet.id,
+              text: tweet.text,
+              score: result.score,
+              explanation: result.explanation
+            });
+          }
+          
           lastTweetId = tweet.id;
+        };
+        
+        // 处理所有推文
+        for (const tweet of sortedTweets) {
+          await processWithResult(tweet);
+        }
+        
+        // 输出本次轮询结果
+        if (matchedCount > 0) {
+          console.log(`[TwitterService] 本次轮询发现 ${matchedCount} 条满足规则的推文:`);
+          matchedTweets.forEach((t, i) => {
+            console.log(`[TwitterService] 匹配推文 #${i+1} (分数: ${t.score.toFixed(2)}):`);
+            console.log(`[TwitterService] 内容: ${t.text.substring(0, 100)}${t.text.length > 100 ? '...' : ''}`);
+            console.log(`[TwitterService] 分析: ${t.explanation.substring(0, 100)}${t.explanation.length > 100 ? '...' : ''}`);
+          });
+        } else if (sortedTweets.length > 0) {
+          console.log(`[TwitterService] 本次轮询获取了 ${sortedTweets.length} 条推文，但没有满足规则的内容`);
         }
       } catch (error: any) {
         if (error?.data) {

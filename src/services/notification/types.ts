@@ -10,6 +10,7 @@ export interface NotificationPayload {
     ruleName: string;
     relevanceScore: number;
     analysisResult: string;
+    matchCount?: number;
   };
 }
 

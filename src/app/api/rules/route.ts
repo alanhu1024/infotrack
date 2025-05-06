@@ -7,16 +7,20 @@ import { trackingService } from '@/services/tracking';
 import { TwitterService, twitterServiceSingleton } from '@/services/twitter';
 import { AIService } from '@/services/ai';
 import { notificationServices } from '@/services/notification';
+import { env } from '@/config/env';
 
 const createRuleSchema = z.object({
   name: z.string().min(1, '规则名称不能为空'),
   description: z.string().optional(),
   twitterUsername: z.string().min(1, 'Twitter 用户名不能为空'),
   criteria: z.string().min(1, '筛选标准不能为空'),
-  pollingInterval: z.number().min(60).max(3600),
-  llmProvider: z.string().min(1, '大模型类型不能为空'),
-  llmApiKey: z.string().optional(),
+  pollingInterval: z.number().min(60).max(86400), // 允许最大24小时
+  notificationPhone: z.string().regex(/^1\d{10}$/, '手机号格式不正确').optional(),
 });
+
+// 硬编码大模型配置
+const DEFAULT_LLM_PROVIDER = 'ali'; // 默认使用阿里模型
+const DEFAULT_LLM_API_KEY = env.ALI_API_KEY; // 从环境变量中获取阿里API Key
 
 export async function POST(request: Request) {
   try {
@@ -43,8 +47,9 @@ export async function POST(request: Request) {
         isActive: true,
         pollingEnabled: true,
         pollingInterval: validatedData.pollingInterval,
-        llmProvider: validatedData.llmProvider,
-        llmApiKey: validatedData.llmApiKey || '',
+        notificationPhone: validatedData.notificationPhone,
+        llmProvider: DEFAULT_LLM_PROVIDER,
+        llmApiKey: DEFAULT_LLM_API_KEY,
       },
     });
 

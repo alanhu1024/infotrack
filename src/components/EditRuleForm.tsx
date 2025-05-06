@@ -9,8 +9,6 @@ import { TimeSlotEditor } from './TimeSlotEditor';
 interface EditRuleFormProps {
   rule: TrackingRule & { 
     timeSlots?: TrackingTimeSlot[];
-    llmProvider?: string;
-    llmApiKey?: string;
   };
 }
 
@@ -23,12 +21,6 @@ const POLLING_INTERVALS = [
   { value: 21600, label: '6小时' },
   { value: 43200, label: '12小时' },
 ] as const;
-
-const LLM_PROVIDERS = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'ali', label: '阿里' },
-  // 可扩展更多厂商
-];
 
 export default function EditRuleForm({ rule }: EditRuleFormProps) {
   const router = useRouter();
@@ -46,8 +38,7 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
     pollingEnabled: rule.pollingEnabled,
     pollingInterval: rule.pollingInterval || POLLING_INTERVALS[0].value,
     timeSlots: rule.timeSlots || [],
-    llmProvider: rule.llmProvider || 'openai',
-    llmApiKey: rule.llmApiKey || '',
+    notificationPhone: rule.notificationPhone || '',
   });
 
   useEffect(() => {
@@ -332,6 +323,25 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
           </p>
         </div>
 
+        <div>
+          <label htmlFor="notificationPhone" className="block text-sm font-medium text-gray-700">
+            接收电话通知的手机号码（可选）
+          </label>
+          <input
+            type="text"
+            id="notificationPhone"
+            name="notificationPhone"
+            value={formData.notificationPhone}
+            onChange={handleChange}
+            pattern="^1\d{10}$"
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            placeholder="请输入11位手机号码"
+          />
+          <p className="mt-2 text-sm text-gray-500">
+            填写后，当发现匹配规则的推文时，系统将通过外呼平台自动呼叫您的手机。
+          </p>
+        </div>
+
         <div className="space-y-4">
           <div>
             <label htmlFor="pollingInterval" className="block text-sm font-medium text-gray-700">
@@ -361,40 +371,6 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
             timeSlots={formData.timeSlots}
             onChange={handleTimeSlotChange}
           />
-        </div>
-
-        <div>
-          <label htmlFor="llmProvider" className="block text-sm font-medium text-gray-700">
-            大模型类型
-          </label>
-          <select
-            id="llmProvider"
-            name="llmProvider"
-            value={formData.llmProvider}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            {LLM_PROVIDERS.map(provider => (
-              <option key={provider.value} value={provider.value}>
-                {provider.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="llmApiKey" className="block text-sm font-medium text-gray-700">
-            大模型 API Key
-          </label>
-          <input
-            type="text"
-            id="llmApiKey"
-            name="llmApiKey"
-            value={formData.llmApiKey}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            placeholder="请输入大模型 API Key"
-          />
-          <p className="mt-1 text-sm text-gray-500">不会上传到云端，仅用于本次规则追踪。</p>
         </div>
 
         <div className="flex justify-between items-center">

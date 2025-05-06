@@ -21,5 +21,6 @@ export interface TrackingRule {
   lastPolledAt: Date | null;
   pollingEnabled: boolean;
   pollingInterval: number;
+  notificationPhone?: string;
   timeSlots: TrackingTimeSlot[];
 } 

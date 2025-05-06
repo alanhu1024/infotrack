@@ -13,6 +13,9 @@ const envSchema = z.object({
   // OpenAI API
   OPENAI_API_KEY: z.string(),
   
+  // 阿里大模型 API
+  ALI_API_KEY: z.string().default('sk-48cac4f6e9ad4dabbcc0688654e70820'),
+  
   // Notification Channels
   FEISHU_APP_ID: z.string().optional(),
   FEISHU_APP_SECRET: z.string().optional(),
@@ -20,6 +23,12 @@ const envSchema = z.object({
   DINGTALK_APP_SECRET: z.string().optional(),
   WECHAT_APP_ID: z.string().optional(),
   WECHAT_APP_SECRET: z.string().optional(),
+  
+  // 百度智能外呼平台
+  BAIDU_ACCESS_KEY: z.string().default('1c0dcd70ec4c4af1a4418c137e314abe'),
+  BAIDU_SECRET_KEY: z.string().default('b53c0c34e7564cddb4169a35847ffcc6'),
+  BAIDU_ROBOT_ID: z.string().default('6c428d95-790b-4ef4-8b1c-d6622520c8b6'),
+  BAIDU_CALLER_NUMBER: z.string().default('02110001023'),
 });
 
 export const env = envSchema.parse(process.env);

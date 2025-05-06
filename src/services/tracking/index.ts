@@ -5,6 +5,8 @@ import type { Tweet, TrackingRule, NotificationChannel } from '@/types';
 import { OpenAIService } from '../llm/openai';
 import { AliService } from '../llm/ali';
 import { prisma } from '@/lib/prisma';
+import { notificationServices } from '@/services/notification';
+import { env } from '@/config/env';
 
 // 声明全局单例
 declare global {
@@ -13,6 +15,13 @@ declare global {
 
 // 单例实例引用
 let trackingServiceInstance: TrackingService | null = global.__trackingServiceInstance || null;
+
+// 定义推文处理结果接口
+interface TweetProcessResult {
+  matched: boolean;
+  score: number;
+  explanation: string;
+}
 
 export class TrackingService {
   constructor(
@@ -50,19 +59,28 @@ export class TrackingService {
 
     console.log(`[TrackingService] 启动规则追踪: ${rule.id} (${rule.name})`);
 
+    // 存储匹配的推文信息，用于后续通知
+    const matchedTweets: Array<{
+      id: string;
+      text: string;
+      authorId: string;
+      score: number;
+      explanation: string;
+    }> = [];
+
     // 处理推文的回调函数
     const handleTweet = async (tweet: {
       id: string;
       text: string;
       authorId: string;
       createdAt: Date;
-    }) => {
+    }): Promise<TweetProcessResult> => {
       try {
         console.log(`[TrackingService] 检测到推文:`, tweet);
         // 动态选择大模型服务
         let llm;
         if (rule.llmProvider === 'ali') {
-          llm = new AliService(rule.llmApiKey);
+          llm = new AliService(env.ALI_API_KEY);
         } else {
           llm = new OpenAIService(rule.llmApiKey);
         }
@@ -71,9 +89,20 @@ export class TrackingService {
         console.log(`[TrackingService] 推文分析结果:`, analysis);
         // 新增详细输出
         console.log(`[TrackingService] 相关性分数: ${analysis.relevanceScore}, 说明: ${analysis.explanation}`);
+        
+        // 默认结果对象
+        const result = {
+          matched: false,
+          score: analysis.relevanceScore,
+          explanation: analysis.explanation
+        };
+        
         // 如果相关性分数超过阈值，保存推文
         if (analysis.relevanceScore >= 0.7) {
-          // 保存推文
+          // 设置匹配状态为true
+          result.matched = true;
+          
+          // 保存推文到数据库
           await this.prisma.tweet.upsert({
             where: { tweetId: tweet.id },
             update: {}, // 已存在时不做任何更新
@@ -91,11 +120,25 @@ export class TrackingService {
             },
           });
           console.log(`[TrackingService] 推文已保存:`, tweet.id);
+          
+          // 添加到匹配推文列表，稍后处理通知
+          matchedTweets.push({
+            id: tweet.id,
+            text: tweet.text,
+            authorId: tweet.authorId,
+            score: analysis.relevanceScore,
+            explanation: analysis.explanation
+          });
         } else {
           console.log(`[TrackingService] 推文相关性分数过低，未保存。`);
         }
+        
+        // 返回处理结果
+        return result;
       } catch (error) {
         console.error(`[TrackingService] 处理推文出错:`, error);
+        // 发生错误时返回未匹配状态
+        return { matched: false, score: 0, explanation: `处理出错: ${error}` };
       }
     };
 
@@ -105,10 +148,86 @@ export class TrackingService {
       text: string;
       authorId: string;
       createdAt: Date;
-    }) => {
-      await handleTweet(tweet);
-      // 每次处理推文后都更新时间（可选：只在有推文时更新）
+    }): Promise<TweetProcessResult> => {
+      // 调用原始处理函数并获取结果
+      const result = await handleTweet(tweet);
+      
+      // 每次处理推文后都更新时间
       await this.updateLastPolledAt(rule.id);
+      
+      // 返回处理结果给调用者
+      return result;
+    };
+
+    // 装饰Twitter服务的startPolling方法，在轮询完成后检查匹配数量并发送通知
+    const originalStartPolling = this.twitter.startPolling.bind(this.twitter);
+    this.twitter.startPolling = async (rule, callback) => {
+      // 处理轮询结果的包装回调
+      const wrappedCallback = async (tweet: any) => {
+        const result = await callback(tweet);
+        return result;
+      };
+
+      // 调用原始startPolling方法
+      await originalStartPolling(rule, wrappedCallback);
+      
+      // 轮询完成后，如果有匹配推文，发送通知
+      if (matchedTweets.length > 0) {
+        console.log(`[TrackingService] 本次轮询中匹配推文数量: ${matchedTweets.length}，准备发送通知`);
+        
+        try {
+          // 获取规则详细信息，包括手机号码
+          const ruleDetails = await this.prisma.trackingRule.findUnique({
+            where: { id: rule.id },
+            include: {
+              user: true
+            }
+          });
+          
+          // 如果设置了通知手机号码，使用百度智能外呼
+          if (ruleDetails?.notificationPhone) {
+            try {
+              console.log(`[TrackingService] 将通过百度智能外呼通知用户: ${ruleDetails.notificationPhone}`);
+              const baiduCallingService = notificationServices.get('baidu-calling');
+              
+              if (baiduCallingService) {
+                // 选择第一条匹配推文作为通知内容
+                const firstMatch = matchedTweets[0];
+                
+                await baiduCallingService.send({
+                  userId: ruleDetails.notificationPhone,
+                  channelId: 'phone',
+                  title: `检测到${matchedTweets.length}条匹配规则"${ruleDetails.name}"的推文`,
+                  content: `您有重要通知，检测到${matchedTweets.length}条匹配规则"${ruleDetails.name}"的内容，可以打开infotrack查看。`,
+                  metadata: {
+                    matchCount: matchedTweets.length,
+                    tweetId: firstMatch.id,
+                    authorId: firstMatch.authorId,
+                    ruleId: rule.id,
+                    ruleName: rule.name,
+                    relevanceScore: firstMatch.score,
+                    analysisResult: firstMatch.explanation
+                  }
+                });
+                console.log(`[TrackingService] 已成功发送百度智能外呼通知`);
+              } else {
+                console.warn(`[TrackingService] 百度智能外呼服务未配置，跳过通知`);
+              }
+            } catch (notifyError) {
+              console.error(`[TrackingService] 发送百度智能外呼通知失败:`, notifyError);
+            }
+          } else {
+            console.log(`[TrackingService] 规则未配置通知手机号码，跳过通知`);
+          }
+        } catch (error) {
+          console.error(`[TrackingService] 处理通知出错:`, error);
+        }
+        
+        // 清空匹配推文列表，为下次轮询准备
+        matchedTweets.length = 0;
+      } else {
+        console.log(`[TrackingService] 本次轮询中没有匹配推文，不发送通知`);
+      }
     };
 
     // 启动轮询

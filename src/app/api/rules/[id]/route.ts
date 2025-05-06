@@ -13,9 +13,9 @@ const updateRuleSchema = z.object({
   twitterUsername: z.string().min(1, 'Twitter 用户名不能为空'),
   criteria: z.string().min(1, '筛选标准不能为空'),
   isActive: z.boolean(),
-  pollingInterval: z.number().min(60).max(3600),
-  llmProvider: z.string().min(1, '大模型类型不能为空'),
-  llmApiKey: z.string().optional(),
+  pollingInterval: z.number().min(60).max(86400),
+  notificationPhone: z.string().regex(/^1\d{10}$/, '手机号格式不正确').optional(),
+  timeSlots: z.array(z.any()).optional(),
 });
 
 export async function PUT(
@@ -31,13 +31,33 @@ export async function PUT(
     const data = await request.json();
     const { timeSlots, ...ruleData } = updateRuleSchema.parse(data);
 
-    // 更新规则基本信息
+    // 获取现有规则，保留大模型配置
+    const existingRule = await prisma.trackingRule.findUnique({
+      where: {
+        id: params.id,
+        userId: session.user.id,
+      },
+      select: {
+        llmProvider: true,
+        llmApiKey: true,
+      },
+    });
+
+    if (!existingRule) {
+      return NextResponse.json({ error: '规则不存在' }, { status: 404 });
+    }
+
+    // 更新规则基本信息，保持大模型配置不变
     const rule = await prisma.trackingRule.update({
       where: {
         id: params.id,
         userId: session.user.id,
       },
-      data: ruleData,
+      data: {
+        ...ruleData,
+        llmProvider: existingRule.llmProvider,
+        llmApiKey: existingRule.llmApiKey,
+      },
     });
 
     // 删除现有的时间段
@@ -96,7 +116,7 @@ export async function DELETE(
     }
     
     // 停止追踪
-    await trackingService.stopTracking(rule);
+    await trackingService.stopTracking(rule.id, rule.name);
     
     // 删除规则和相关数据
     await trackingService.deleteRule(id);

@@ -10,23 +10,18 @@ interface FormData {
   twitterUsername: string;
   criteria: string;
   pollingInterval: number;
-  llmProvider: string;
-  llmApiKey: string;
+  notificationPhone?: string;
 }
 
 const POLLING_INTERVALS = [
-  { value: 60, label: '1分钟' },
-  { value: 300, label: '5分钟' },
   { value: 900, label: '15分钟' },
   { value: 1800, label: '30分钟' },
-  { value: 3600, label: '60分钟' },
-];
-
-const LLM_PROVIDERS = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'ali', label: '阿里' },
-  // 可扩展更多厂商
-];
+  { value: 3600, label: '1小时' },
+  { value: 7200, label: '2小时' },
+  { value: 10800, label: '3小时' },
+  { value: 21600, label: '6小时' },
+  { value: 43200, label: '12小时' },
+] as const;
 
 export default function CreateRuleForm() {
   const router = useRouter();
@@ -35,9 +30,8 @@ export default function CreateRuleForm() {
     description: '',
     twitterUsername: '',
     criteria: '',
-    pollingInterval: 300, // 默认5分钟
-    llmProvider: 'ali', // 默认阿里
-    llmApiKey: '',
+    pollingInterval: 900, // 默认15分钟
+    notificationPhone: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -97,13 +91,12 @@ export default function CreateRuleForm() {
           onChange={handleChange}
           required
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          placeholder="例如：AI 技术动态"
         />
       </div>
 
       <div>
         <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-          描述
+          规则描述（可选）
         </label>
         <textarea
           id="description"
@@ -112,7 +105,6 @@ export default function CreateRuleForm() {
           onChange={handleChange}
           rows={2}
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          placeholder="添加规则的描述信息"
         />
       </div>
 
@@ -132,7 +124,6 @@ export default function CreateRuleForm() {
             onChange={handleChange}
             required
             className="block w-full rounded-none rounded-r-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            placeholder="用户名"
           />
         </div>
       </div>
@@ -147,10 +138,12 @@ export default function CreateRuleForm() {
           value={formData.criteria}
           onChange={handleChange}
           required
-          rows={3}
+          rows={5}
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          placeholder="设置推文内容的筛选标准，系统将根据此标准分析推文的相关性"
         />
+        <p className="mt-2 text-sm text-gray-500">
+          详细描述您感兴趣的内容特征，AI 将根据这些标准来判断推文是否相关。
+        </p>
       </div>
 
       <div>
@@ -170,44 +163,28 @@ export default function CreateRuleForm() {
             </option>
           ))}
         </select>
-        <p className="mt-1 text-sm text-gray-500">
-          选择检查新推文的时间间隔。
+        <p className="mt-2 text-sm text-gray-500">
+          选择检查新推文的时间间隔，建议选择合适的间隔以平衡实时性和系统负载。
         </p>
       </div>
 
       <div>
-        <label htmlFor="llmProvider" className="block text-sm font-medium text-gray-700">
-          大模型类型
-        </label>
-        <select
-          id="llmProvider"
-          name="llmProvider"
-          value={formData.llmProvider}
-          onChange={handleChange}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        >
-          {LLM_PROVIDERS.map(provider => (
-            <option key={provider.value} value={provider.value}>
-              {provider.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="llmApiKey" className="block text-sm font-medium text-gray-700">
-          大模型 API Key
+        <label htmlFor="notificationPhone" className="block text-sm font-medium text-gray-700">
+          接收电话通知的手机号码（可选）
         </label>
         <input
           type="text"
-          id="llmApiKey"
-          name="llmApiKey"
-          value={formData.llmApiKey}
+          id="notificationPhone"
+          name="notificationPhone"
+          value={formData.notificationPhone}
           onChange={handleChange}
+          pattern="^1\d{10}$"
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          placeholder="请输入大模型 API Key"
+          placeholder="请输入11位手机号码"
         />
-        <p className="mt-1 text-sm text-gray-500">不会上传到云端，仅用于本次规则追踪。</p>
+        <p className="mt-2 text-sm text-gray-500">
+          填写后，当发现匹配规则的推文时，系统将通过外呼平台自动呼叫您的手机。
+        </p>
       </div>
 
       <div className="flex justify-end">

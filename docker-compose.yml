@@ -1,0 +1,41 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=infotrack
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/infotrack
+      - TWITTER_API_KEY=${TWITTER_API_KEY}
+      - TWITTER_API_SECRET=${TWITTER_API_SECRET}
+      - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN}
+      - TWITTER_ACCESS_SECRET=${TWITTER_ACCESS_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ALI_API_KEY=${ALI_API_KEY}
+      - BAIDU_ACCESS_KEY=${BAIDU_ACCESS_KEY}
+      - BAIDU_SECRET_KEY=${BAIDU_SECRET_KEY}
+      - BAIDU_ROBOT_ID=${BAIDU_ROBOT_ID}
+      - BAIDU_CALLER_NUMBER=${BAIDU_CALLER_NUMBER}
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=your-nextauth-secret-key
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data: 

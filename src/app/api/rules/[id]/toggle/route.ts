@@ -42,7 +42,7 @@ export async function POST(
     if (updatedRule.isActive) {
       await trackingService.startTracking(updatedRule);
     } else {
-      await trackingService.stopTracking(updatedRule);
+      await trackingService.stopTracking(updatedRule.id, updatedRule.name);
     }
     
     return NextResponse.json({ success: true, rule: updatedRule });

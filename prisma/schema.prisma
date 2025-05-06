@@ -83,6 +83,7 @@ model TrackingRule {
   tweets          Tweet[]
   llmProvider     String            @default("openai")
   llmApiKey       String            @default("")
+  notificationPhone String?         @default("")
 
   @@map("tracking_rules")
 }
