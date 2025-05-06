@@ -554,12 +554,12 @@ export class BaiduCallingService implements NotificationService {
       
       console.log('[BaiduCallingService] 机器人列表响应:', JSON.stringify(response.data, null, 2));
       
-      if (response.data.code !== 200 || !response.data.data || !Array.isArray(response.data.data.robots)) {
+      if (response.data.code !== 200 || !response.data.data || !Array.isArray(response.data.data.list)) {
         throw new Error(`获取机器人列表失败: ${response.data.msg || '未知错误'}`);
       }
       
-      // 查找名为"infotrack"的机器人
-      const robots = response.data.data.robots;
+      // 查找名为"infotrack"的机器人，从list字段获取
+      const robots = response.data.data.list;
       const infotrackRobot = robots.find((robot: any) => 
         robot.robotName?.toLowerCase() === 'infotrack' || 
         robot.robotName?.includes('infotrack') ||
