@@ -7,6 +7,7 @@ import { trackingService } from '@/services/tracking';
 import { TwitterService, twitterServiceSingleton } from '@/services/twitter';
 import { AIService } from '@/services/ai';
 import { notificationServices } from '@/services/notification';
+import { BaiduCallingService } from '@/services/notification/baidu-calling';
 import { env } from '@/config/env';
 
 const createRuleSchema = z.object({
@@ -52,6 +53,24 @@ export async function POST(request: Request) {
         llmApiKey: DEFAULT_LLM_API_KEY,
       },
     });
+
+    // 如果配置了通知手机号码，将其添加到百度智能外呼平台白名单
+    if (validatedData.notificationPhone) {
+      try {
+        console.log(`[API/rules] 将手机号码 ${validatedData.notificationPhone} 添加到百度智能外呼平台白名单`);
+        const baiduCallingService = notificationServices.get('baidu-calling') as BaiduCallingService | undefined;
+        
+        if (baiduCallingService) {
+          const importResult = await baiduCallingService.ensurePhoneInWhitelist([validatedData.notificationPhone]);
+          console.log(`[API/rules] 导入白名单结果: ${importResult.message}`);
+        } else {
+          console.warn('[API/rules] 百度智能外呼服务未配置，无法添加手机号码到白名单');
+        }
+      } catch (error) {
+        console.error('[API/rules] 添加手机号码到白名单失败:', error);
+        // 继续创建规则，不因白名单导入失败而中断创建过程
+      }
+    }
 
     // 使用trackingService单例启动轮询
     await trackingService.startTracking(rule);

@@ -6,6 +6,8 @@ import { prisma } from '@/lib/prisma';
 import { trackingService } from '@/services/tracking';
 import { twitterServiceSingleton } from '@/services/twitter';
 import { AIService } from '@/services/ai';
+import { notificationServices } from '@/services/notification';
+import { BaiduCallingService } from '@/services/notification/baidu-calling';
 
 const updateRuleSchema = z.object({
   name: z.string().min(1, '规则名称不能为空'),
@@ -40,6 +42,7 @@ export async function PUT(
       select: {
         llmProvider: true,
         llmApiKey: true,
+        notificationPhone: true,
       },
     });
 
@@ -77,6 +80,24 @@ export async function PUT(
           pollingInterval: slot.pollingInterval,
         })),
       });
+    }
+
+    // 如果更新了通知手机号码，并且与之前不同，将其添加到百度智能外呼平台白名单
+    if (ruleData.notificationPhone && ruleData.notificationPhone !== existingRule.notificationPhone) {
+      try {
+        console.log(`[API/rules/update] 将手机号码 ${ruleData.notificationPhone} 添加到百度智能外呼平台白名单`);
+        const baiduCallingService = notificationServices.get('baidu-calling') as BaiduCallingService | undefined;
+        
+        if (baiduCallingService) {
+          const importResult = await baiduCallingService.ensurePhoneInWhitelist([ruleData.notificationPhone]);
+          console.log(`[API/rules/update] 导入白名单结果: ${importResult.message}`);
+        } else {
+          console.warn('[API/rules/update] 百度智能外呼服务未配置，无法添加手机号码到白名单');
+        }
+      } catch (error) {
+        console.error('[API/rules/update] 添加手机号码到白名单失败:', error);
+        // 继续更新规则，不因白名单导入失败而中断更新过程
+      }
     }
 
     return NextResponse.json(rule);

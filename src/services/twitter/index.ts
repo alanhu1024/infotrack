@@ -6,14 +6,25 @@ import { prisma } from '@/lib/prisma';
 // 使用全局对象确保真正的全局单例
 declare global {
   var __twitterServiceInstance: TwitterService | null;
+  // 也将pollingJobs放入全局对象，确保跨请求持久存在
+  var __twitterPollingJobs: Map<string, NodeJS.Timeout> | null;
 }
 
 // 优先从全局对象获取实例
 let twitterServiceInstance: TwitterService | null = global.__twitterServiceInstance || null;
 
+// 同样从全局获取pollingJobs
+if (!global.__twitterPollingJobs) {
+  global.__twitterPollingJobs = new Map<string, NodeJS.Timeout>();
+  console.log('[TwitterService] 创建全局定时器管理Map');
+}
+
 export class TwitterService {
   private client: TwitterApi;
-  private pollingJobs: Map<string, NodeJS.Timeout>;
+  // 使用全局存储的pollingJobs，确保跨请求持久
+  private get pollingJobs(): Map<string, NodeJS.Timeout> {
+    return global.__twitterPollingJobs as Map<string, NodeJS.Timeout>;
+  }
 
   // 私有构造函数，防止直接new
   private constructor() {
@@ -28,15 +39,18 @@ export class TwitterService {
       accessToken: env.TWITTER_ACCESS_TOKEN,
       accessSecret: env.TWITTER_ACCESS_SECRET,
     });
-    this.pollingJobs = new Map();
+    
+    // 打印当前定时器状态
+    console.log(`[TwitterService] 当前全局定时器Map大小: ${this.pollingJobs.size}, keys:`, 
+      Array.from(this.pollingJobs.keys()));
   }
 
-  // 获取单例实例的静态方法
+  // 单例获取方法
   public static getInstance(): TwitterService {
     if (!twitterServiceInstance) {
       twitterServiceInstance = new TwitterService();
-      // 保存到全局对象
       global.__twitterServiceInstance = twitterServiceInstance;
+      console.log('[TwitterService] 已创建全局单例实例');
     }
     return twitterServiceInstance;
   }
@@ -85,6 +99,7 @@ export class TwitterService {
     score: number;
     explanation: string;
   } | void>): Promise<void> {
+    // 确保规则ID是字符串
     const key = String(rule.id);
     console.log(`[TwitterService] startPolling 请求, key:`, key, typeof key);
     console.log(`[TwitterService] 当前所有定时器key (${this.pollingJobs.size}个):`, Array.from(this.pollingJobs.keys()));
@@ -109,7 +124,7 @@ export class TwitterService {
     }
     
     // 如果已存在定时器，先停止
-    if (this.pollingJobs.has(key)) {
+    if (this.isPolling(key)) {
       console.log(`[TwitterService] 规则 ${key} 已有定时器，先清理再重建`);
       this.stopPolling(key);
     }
@@ -117,7 +132,7 @@ export class TwitterService {
     // 考虑上次轮询时间，避免过于频繁的轮询
     const lastPolledAt = rule.lastPolledAt ? new Date(rule.lastPolledAt) : null;
     const now = new Date();
-    const minIntervalMs = Math.max(rule.pollingInterval * 1000 * 0.8, 60000); // 至少间隔原设定的80%或1分钟
+    const minIntervalMs = Math.max(rule.pollingInterval * 1000 * 0.8, 60000);
     
     if (lastPolledAt && now.getTime() - lastPolledAt.getTime() < minIntervalMs) {
       // 如果距离上次轮询不到最小间隔，延迟启动定时器
@@ -127,9 +142,15 @@ export class TwitterService {
       // 保存规则ID，不直接使用rule对象引用
       const ruleId = rule.id;
       
+      // 确保延迟定时器的KEY格式一致
+      const delayKey = `${key}_delay`;
+      
       // 创建延迟启动的定时器
       const delayTimer = setTimeout(async () => {
         console.log(`[TwitterService] 延迟结束，检查规则 ${ruleId} 状态`);
+        
+        // 清除延迟定时器的引用
+        this.pollingJobs.delete(delayKey);
         
         // 延迟结束后，重新检查规则状态
         try {
@@ -151,7 +172,8 @@ export class TwitterService {
       }, remainingTime);
       
       // 记录延迟定时器，确保可以被清理
-      this.pollingJobs.set(`${key}_delay`, delayTimer);
+      this.pollingJobs.set(delayKey, delayTimer);
+      console.log(`[TwitterService] 已创建延迟定时器: ${delayKey}, ${remainingTime}ms后执行`);
       return;
     }
 
@@ -342,8 +364,14 @@ export class TwitterService {
     const intervalIdStr = intervalId.toString();
     console.log(`[TwitterService] 创建定时器: ruleId=${key}, intervalId=${intervalIdStr}`);
     
+    // 确保使用正确的key格式存储
     this.pollingJobs.set(key, intervalId);
+    
+    // 同步更新全局状态
+    global.__twitterPollingJobs = this.pollingJobs;
+    
     console.log(`[TwitterService] 已启动轮询定时器: ${key}, interval=${rule.pollingInterval}s, 当前定时器总数: ${this.pollingJobs.size}`);
+    console.log(`[TwitterService] 当前所有定时器key: ${Array.from(this.pollingJobs.keys()).join(', ')}`);
   }
 
   stopPolling(ruleId: string): void {
@@ -383,7 +411,11 @@ export class TwitterService {
       }
     }
     
+    // 同步更新全局状态
+    global.__twitterPollingJobs = this.pollingJobs;
+    
     console.log(`[TwitterService] 已清理所有相关定时器, 剩余定时器: ${this.pollingJobs.size}个`);
+    console.log(`[TwitterService] 剩余定时器key: ${Array.from(this.pollingJobs.keys()).join(', ')}`);
   }
 
   isPolling(ruleId: string): boolean {
@@ -391,7 +423,7 @@ export class TwitterService {
     // 同时检查主定时器和所有延迟定时器
     const allKeys = Array.from(this.pollingJobs.keys());
     const hasTimer = allKeys.some(k => k === key || k.startsWith(`${key}_`));
-    console.log(`[TwitterService] isPolling 检查: ${key}, 结果: ${hasTimer}`);
+    console.log(`[TwitterService] isPolling 检查: ${key}, 结果: ${hasTimer}, 当前所有key: ${allKeys.join(', ')}`);
     return hasTimer;
   }
   
@@ -409,13 +441,36 @@ export class TwitterService {
     
     // 逐个清理
     for (const key of allKeys) {
-      this.stopPolling(key);
+      const timer = this.pollingJobs.get(key);
+      if (timer) {
+        // 根据定时器类型选择清理方法
+        if (key.includes('_delay')) {
+          clearTimeout(timer);
+        } else {
+          clearInterval(timer);
+        }
+        this.pollingJobs.delete(key);
+        console.log(`[TwitterService] 已清理定时器: ${key}`);
+      }
     }
     
     // 以防万一，直接清空Map
     this.pollingJobs.clear();
     
+    // 同步更新全局状态
+    global.__twitterPollingJobs = this.pollingJobs;
+    
     console.log(`[TwitterService] 已清空所有定时器, 当前定时器数: ${this.pollingJobs.size}`);
+  }
+  
+  // 添加持久化定时器状态到数据库的方法（可选实现）
+  async persistTimers(): Promise<void> {
+    try {
+      console.log(`[TwitterService] 持久化 ${this.pollingJobs.size} 个定时器状态`);
+      // 这里可以实现将定时器存储到数据库的逻辑
+    } catch (error) {
+      console.error('[TwitterService] 持久化定时器状态失败:', error);
+    }
   }
 }
 

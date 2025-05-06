@@ -170,7 +170,7 @@ export default function CreateRuleForm() {
 
       <div>
         <label htmlFor="notificationPhone" className="block text-sm font-medium text-gray-700">
-          接收电话通知的手机号码（可选）
+          接收电话通知的手机号码
         </label>
         <input
           type="text"

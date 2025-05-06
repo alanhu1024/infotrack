@@ -1,5 +1,6 @@
 import { trackingService } from '.';
 import { prisma } from '@/lib/prisma';
+import { importAllPhonesIntoWhitelist } from '@/services/notification/import-phone-whitelist';
 
 // 全局初始化标记，防止并发初始化
 let isInitializing = false;
@@ -28,6 +29,16 @@ export async function initializeTracking(): Promise<void> {
   
   try {
     console.log('[Boot] 初始化规则追踪服务...');
+    
+    // 导入所有规则配置中的手机号码到百度智能外呼平台白名单
+    try {
+      console.log('[Boot] 开始导入手机号码到百度智能外呼平台白名单...');
+      const importResult = await importAllPhonesIntoWhitelist();
+      console.log(`[Boot] 导入手机号码白名单结果: ${importResult.message}`, importResult.stats);
+    } catch (error) {
+      console.error('[Boot] 导入手机号码白名单失败:', error);
+      // 继续执行其他初始化步骤，不因白名单导入失败而中断整个初始化流程
+    }
     
     // 获取当前所有活跃的定时器
     const activeTimers = trackingService['twitter'].getActiveRuleIds();
