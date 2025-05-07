@@ -59,7 +59,7 @@ export default function CreateRuleForm() {
         throw new Error((data && data.message) || '创建规则失败');
       }
 
-      toast.success('规则创建成功');
+      toast.success('规则创建成功，轮询将在后台自动开始');
       router.push('/rules');
     } catch (error) {
       console.error('创建规则出错', error);
@@ -193,7 +193,7 @@ export default function CreateRuleForm() {
           disabled={isSubmitting}
           className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {isSubmitting ? '创建中...' : '创建规则'}
+          {isSubmitting ? '创建中...' : '创建规则（将在后台开始轮询）'}
         </button>
       </div>
     </form>

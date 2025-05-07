@@ -66,24 +66,25 @@ model VerificationToken {
 }
 
 model TrackingRule {
-  id              String            @id @default(cuid())
-  userId          String
-  name            String
-  description     String
-  criteria        String
-  isActive        Boolean           @default(true)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  twitterUsername String
-  lastPolledAt    DateTime?
-  pollingEnabled  Boolean           @default(true)
-  pollingInterval Int               @default(300)
-  timeSlots       TrackingTimeSlot[]
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tweets          Tweet[]
-  llmProvider     String            @default("openai")
-  llmApiKey       String            @default("")
-  notificationPhone String?         @default("")
+  id                 String            @id @default(cuid())
+  userId             String
+  name               String
+  description        String
+  criteria           String
+  isActive           Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  twitterUsername    String
+  lastPolledAt       DateTime?
+  pollingEnabled     Boolean           @default(true)
+  pollingInterval    Int               @default(300)
+  timeSlots          TrackingTimeSlot[]
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tweets             Tweet[]
+  llmProvider        String            @default("openai")
+  llmApiKey          String            @default("")
+  notificationPhone  String?           @default("")
+  lastProcessedTweetId String?        // 添加最后处理的推文ID
 
   @@map("tracking_rules")
 }

@@ -7,6 +7,9 @@ import { UserNav } from '@/components/user-nav';
 import Navigation from '@/components/Navigation';
 import InitializeServices from "@/components/InitializeServices";
 
+// 导入服务器初始化模块，确保在服务器启动时自动加载
+import '@/app/api/init';
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {

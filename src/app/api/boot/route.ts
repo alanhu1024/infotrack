@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { trackingService } from '@/services/tracking';
 import { initializeTracking } from '@/services/tracking/boot';
 
+// 导入boot模块，确保自动初始化功能被加载
+// 这会触发模块内的setupAutoInitialization函数执行
+import '@/services/tracking/boot';
+
+// 导入专用的服务器初始化模块
+import './server-init';
+
 // 系统启动路由，调用此端点初始化所有服务
 export async function GET() {
   console.log('[API] 系统启动初始化...');

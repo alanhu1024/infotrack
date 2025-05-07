@@ -72,8 +72,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // 使用trackingService单例启动轮询
-    await trackingService.startTracking(rule);
+    // 使用trackingService单例启动轮询 - 改为异步执行
+    // 将轮询操作放入下一个事件循环，使API立即返回
+    setTimeout(() => {
+      console.log(`[API/rules] 异步启动规则 ${rule.id} 的轮询`);
+      trackingService.startTracking(rule)
+        .then(() => console.log(`[API/rules] 规则 ${rule.id} 轮询启动成功`))
+        .catch(err => console.error(`[API/rules] 规则 ${rule.id} 轮询启动失败:`, err));
+    }, 0);
 
     return NextResponse.json(rule, { status: 201 });
   } catch (error) {

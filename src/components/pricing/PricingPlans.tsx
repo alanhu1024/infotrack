@@ -180,8 +180,8 @@ export function PricingPlans() {
   };
 
   return (
-    <div className="mt-12 space-y-12 lg:space-y-8 lg:grid lg:grid-cols-4 lg:gap-x-6">
-            <div className="mt-8 flex justify-center col-span-4">
+    <div className="mt-12 space-y-12 lg:space-y-6 lg:grid lg:grid-cols-4 lg:gap-x-6">
+            <div className="mt-2 flex justify-center col-span-4">
         <div className="relative bg-gray-100 rounded-lg p-0.5">
           <button
             type="button"
@@ -207,7 +207,7 @@ export function PricingPlans() {
         </div>
       </div>
 
-      <div className="relative p-6 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col">
+      <div className="relative p-2 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col">
         <div className="flex-1">
           <h3 className="text-xl font-semibold text-gray-900">免费版</h3>
           <p className="mt-4 flex items-baseline text-gray-900">
@@ -382,7 +382,7 @@ export function PricingPlans() {
         </button>
       </div>
 
-      <div className="col-span-4 mt-12 text-center">
+      <div className="col-span-4 mt-8 text-center">
         <p className="text-sm text-gray-500">
           所有套餐额度在每个自然月开始时重置。套餐可随时变更，按照新套餐额度使用。
           <br />如需定制企业方案，请<a href="#" className="font-medium text-indigo-600 hover:text-indigo-500">联系我们</a>。
