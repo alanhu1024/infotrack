@@ -7,6 +7,7 @@ import { prisma } from "./prisma";
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   secret: process.env.NEXTAUTH_SECRET || "infotrack-default-secret-please-change-in-production",
+  useSecureCookies: process.env.NODE_ENV === "production",
   providers: [
     CredentialsProvider({
       name: "Credentials",

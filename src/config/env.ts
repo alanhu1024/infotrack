@@ -6,6 +6,7 @@ const envSchema = z.object({
   
   // NextAuth
   NEXTAUTH_SECRET: z.string().optional().default('infotrack-default-secret-please-change-in-production'),
+  NEXTAUTH_URL: z.string().optional(),
   
   // Twitter API
   TWITTER_API_KEY: z.string().optional().default('dummy_twitter_api_key'),
