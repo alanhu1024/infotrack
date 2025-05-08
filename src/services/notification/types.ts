@@ -3,6 +3,7 @@ export interface NotificationPayload {
   channelId: string;
   title: string;
   content: string;
+  url?: string;
   metadata?: {
     tweetId: string;
     authorId: string;

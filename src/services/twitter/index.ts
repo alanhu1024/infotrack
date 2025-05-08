@@ -107,6 +107,15 @@ export class TwitterService {
       .filter(key => !key.endsWith('_delay')); // 过滤掉延迟键
   }
 
+  // 检查规则是否在轮询中
+  public isPolling(ruleId: string): boolean {
+    // 检查是否有活跃的定时器
+    const hasInterval = this.pollingJobs.has(ruleId);
+    // 检查是否有延迟定时器
+    const hasDelay = this.pollingJobs.has(`${ruleId}_delay`);
+    return hasInterval || hasDelay;
+  }
+
   // 清空所有轮询作业
   public clearAllPollingJobs(): void {
     console.log(`[TwitterService] 清空所有定时器 (${this.pollingJobs.size} 个)`);
@@ -143,7 +152,11 @@ export class TwitterService {
   async fetchUserByUsername(username: string) {
     try {
       const api = await this.initAPI(username);
-      return await api.getUserByUsername(username);
+      // 添加类型断言
+      const extendedApi = api as TwitterApi & {
+        getUserByUsername: (username: string) => Promise<any>;
+      };
+      return await extendedApi.getUserByUsername(username);
     } catch (error) {
       console.error(`[TwitterService] 获取用户 @${username} 信息失败:`, error);
       throw error;
@@ -159,7 +172,11 @@ export class TwitterService {
       // 记录API请求次数
       this.pollingRequestsCount++;
       
-      const result = await api.getUserTweets(username, count, sinceId);
+      // 添加类型断言
+      const extendedApi = api as TwitterApi & {
+        getUserTweets: (username: string, count: number, sinceId?: string) => Promise<any[]>;
+      };
+      const result = await extendedApi.getUserTweets(username, count, sinceId);
       console.log(`[TwitterService] 获取到 ${result.length} 条推文，总API请求次数: ${this.pollingRequestsCount}`);
       return result.map((tweet: any) => ({
         id: tweet.id,

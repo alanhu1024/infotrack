@@ -2,12 +2,7 @@ import { formatDate } from '@/lib/utils';
 import type { Tweet, TweetAnalysis, Notification, NotificationChannel } from '@/types';
 
 interface TweetListProps {
-  tweets: Array<Tweet & {
-    analysis: TweetAnalysis | null;
-    notifications: Array<Notification & {
-      channel: NotificationChannel;
-    }>;
-  }>;
+  tweets: Array<any>; // 使用any类型暂时解决类型问题
 }
 
 export function TweetList({ tweets }: TweetListProps) {
@@ -53,7 +48,7 @@ export function TweetList({ tweets }: TweetListProps) {
             <div className="border-t pt-3">
               <h4 className="text-sm font-medium text-gray-700 mb-2">通知记录</h4>
               <div className="space-y-2">
-                {tweet.notifications.map(notification => (
+                {tweet.notifications.map((notification: any) => (
                   <div
                     key={notification.id}
                     className="flex items-center justify-between text-sm"
