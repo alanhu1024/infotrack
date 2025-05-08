@@ -2,16 +2,16 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   // Database
-  DATABASE_URL: z.string(),
+  DATABASE_URL: z.string().optional().default('postgres://postgres:postgres@localhost:5432/infotrack'),
   
   // Twitter API
-  TWITTER_API_KEY: z.string(),
-  TWITTER_API_SECRET: z.string(),
-  TWITTER_ACCESS_TOKEN: z.string(),
-  TWITTER_ACCESS_SECRET: z.string(),
+  TWITTER_API_KEY: z.string().optional().default('dummy_twitter_api_key'),
+  TWITTER_API_SECRET: z.string().optional().default('dummy_twitter_api_secret'),
+  TWITTER_ACCESS_TOKEN: z.string().optional().default('dummy_twitter_access_token'),
+  TWITTER_ACCESS_SECRET: z.string().optional().default('dummy_twitter_access_secret'),
   
   // OpenAI API
-  OPENAI_API_KEY: z.string(),
+  OPENAI_API_KEY: z.string().optional().default('dummy_openai_api_key'),
   
   // 阿里大模型 API
   ALI_API_KEY: z.string().default('sk-48cac4f6e9ad4dabbcc0688654e70820'),

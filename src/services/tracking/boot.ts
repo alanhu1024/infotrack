@@ -12,6 +12,13 @@ let autoInitTimeoutId: NodeJS.Timeout | null = null;
  * 在系统启动时调用，确保定时器正确初始化
  */
 export async function initializeTracking(): Promise<void> {
+  // 检查是否在构建阶段
+  const isBuildTime = process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL;
+  if (isBuildTime) {
+    console.log('[Boot] 检测到在构建阶段，跳过初始化');
+    return;
+  }
+  
   // 防止短时间内重复初始化
   const now = Date.now();
   if (isInitializing) {

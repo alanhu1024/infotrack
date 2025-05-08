@@ -14,7 +14,20 @@ export async function GET() {
   console.log('[API] 系统启动初始化...');
   
   try {
-    // 初始化追踪服务
+    // 检查是否在构建阶段
+    const isBuildTime = process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL;
+    
+    if (isBuildTime) {
+      // 构建时返回一个简单的成功响应，而不实际初始化服务
+      console.log('[API] 检测到在构建阶段，跳过实际初始化');
+      return NextResponse.json({ 
+        success: true, 
+        message: '构建阶段，跳过服务初始化',
+        isBuildTime: true
+      });
+    }
+    
+    // 运行时环境，初始化追踪服务
     await initializeTracking();
     
     return NextResponse.json({ 
