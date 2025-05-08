@@ -40,7 +40,12 @@ export async function POST(
     
     // 根据新状态启用或停用追踪
     if (updatedRule.isActive) {
-      await trackingService.startTracking(updatedRule);
+      // 将 notificationPhone 从 string | null 转换为 string | undefined
+      const trackingRule = {
+        ...updatedRule,
+        notificationPhone: updatedRule.notificationPhone || undefined
+      };
+      await trackingService.startTracking(trackingRule);
     } else {
       await trackingService.stopTracking(updatedRule.id, updatedRule.name);
     }
