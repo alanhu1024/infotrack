@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "node server.js",
     "lint": "next lint",
     "postinstall": "./run_prisma.sh"
   },
