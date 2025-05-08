@@ -52,6 +52,9 @@ export async function POST(request: Request) {
         llmProvider: DEFAULT_LLM_PROVIDER,
         llmApiKey: DEFAULT_LLM_API_KEY,
       },
+      include: {
+        timeSlots: true // 包含timeSlots关联
+      }
     });
 
     // 如果配置了通知手机号码，将其添加到百度智能外呼平台白名单
@@ -76,7 +79,12 @@ export async function POST(request: Request) {
     // 将轮询操作放入下一个事件循环，使API立即返回
     setTimeout(() => {
       console.log(`[API/rules] 异步启动规则 ${rule.id} 的轮询`);
-      trackingService.startTracking(rule)
+      // 确保传递的rule包含所有必要属性并且类型正确
+      const trackingRule = {
+        ...rule,
+        notificationPhone: rule.notificationPhone || undefined
+      };
+      trackingService.startTracking(trackingRule)
         .then(() => console.log(`[API/rules] 规则 ${rule.id} 轮询启动成功`))
         .catch(err => console.error(`[API/rules] 规则 ${rule.id} 轮询启动失败:`, err));
     }, 0);
