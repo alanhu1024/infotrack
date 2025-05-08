@@ -4,6 +4,9 @@ const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().optional().default('postgres://postgres:postgres@localhost:5432/infotrack'),
   
+  // NextAuth
+  NEXTAUTH_SECRET: z.string().optional().default('infotrack-default-secret-please-change-in-production'),
+  
   // Twitter API
   TWITTER_API_KEY: z.string().optional().default('dummy_twitter_api_key'),
   TWITTER_API_SECRET: z.string().optional().default('dummy_twitter_api_secret'),
