@@ -53,8 +53,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/set-env.sh ./
 EXPOSE 3000
 
 # 设置环境变量
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+# 增加NODE_OPTIONS以限制内存使用
+ENV NODE_OPTIONS="--max-old-space-size=256"
+
+# 添加健康检查
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:3000/api/healthz || exit 1
 
 # 启动应用
 CMD ["node", "server.js"] 
