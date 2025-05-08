@@ -17,7 +17,7 @@ export default async function EditRulePage({ params }: EditRulePageProps) {
     redirect('/auth/login');
   }
 
-  const rule = await prisma.trackingRule.findUnique({
+  const ruleData = await prisma.trackingRule.findUnique({
     where: {
       id: params.id,
     },
@@ -26,14 +26,20 @@ export default async function EditRulePage({ params }: EditRulePageProps) {
     }
   });
 
-  if (!rule) {
+  if (!ruleData) {
     redirect('/rules');
   }
 
   // 验证规则所有权
-  if (rule.userId !== session.user.id) {
+  if (ruleData.userId !== session.user.id) {
     redirect('/rules');
   }
+
+  // 处理类型不匹配问题，特别是将 notificationPhone 从 string | null 转换为 string | undefined
+  const rule = {
+    ...ruleData,
+    notificationPhone: ruleData.notificationPhone || undefined
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">

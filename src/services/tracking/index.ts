@@ -528,7 +528,12 @@ export class TrackingService {
         const isPolling = this.twitter.isPolling(rule.id);
         if (!isPolling) {
           console.log(`[TrackingService] 启动规则 ${rule.id} (${rule.name}) 的追踪`);
-          await this.startTracking(rule);
+          // 处理类型兼容性问题
+          const trackingRule = {
+            ...rule,
+            notificationPhone: rule.notificationPhone || undefined
+          };
+          await this.startTracking(trackingRule);
           resumedCount++;
         } else {
           console.log(`[TrackingService] 规则 ${rule.id} (${rule.name}) 已在轮询中，无需恢复`);

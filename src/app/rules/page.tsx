@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { RuleList } from '@/components/RuleList';
-import type { TrackingRule } from '.prisma/client';
+import type { TrackingRule } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +14,24 @@ export default async function RulesPage() {
     redirect('/auth/login');
   }
 
-  const rules = await prisma.trackingRule.findMany({
+  const rulesData = await prisma.trackingRule.findMany({
     where: {
       userId: session.user.id,
     },
     orderBy: {
       createdAt: 'desc',
     },
+    include: {
+      timeSlots: true
+    }
   });
+
+  // 处理类型不匹配问题，将 notificationPhone 从 string | null 转换为 string | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rules = rulesData.map((rule: any) => ({
+    ...rule,
+    notificationPhone: rule.notificationPhone || undefined
+  })) as TrackingRule[];
 
   return (
     <div className="container mx-auto px-4 py-8">

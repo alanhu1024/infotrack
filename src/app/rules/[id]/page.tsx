@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { formatDate } from '../../../lib/utils';
 import { TweetList } from '../../../components/TweetList';
+import type { TrackingRule } from '@/types';
 
 export default async function RuleDetailPage({
   params,
@@ -15,7 +16,7 @@ export default async function RuleDetailPage({
     return notFound();
   }
 
-  const rule = await prisma.trackingRule.findUnique({
+  const ruleData = await prisma.trackingRule.findUnique({
     where: {
       id: params.id,
       userId: session.user.id,
@@ -38,9 +39,15 @@ export default async function RuleDetailPage({
     },
   });
 
-  if (!rule) {
+  if (!ruleData) {
     return notFound();
   }
+
+  // 处理类型兼容性问题
+  const rule = {
+    ...ruleData,
+    notificationPhone: ruleData.notificationPhone || undefined
+  };
 
   return (
     <div className="space-y-6">
