@@ -1,0 +1,3 @@
+# 默认仅忽略node_modules
+/node_modules
+/.next
