@@ -12,9 +12,12 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# 确保prisma目录和schema文件存在
+RUN test -d ./prisma && test -f ./prisma/schema.prisma || (echo "Error: prisma/schema.prisma not found" && exit 1)
+
 
 # 生成Prisma客户端
-RUN npx prisma generate
+RUN npx prisma generate --schema=./prisma/schema.prisma
 
 # 构建应用
 RUN npm run build
@@ -32,6 +35,7 @@ USER nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.js ./prisma.js
 
 # 使用standalone输出以减小镜像体积
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
