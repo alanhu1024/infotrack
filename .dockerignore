@@ -1,0 +1,7 @@
+# 默认忽略文件
+node_modules
+.next
+
+# 不要忽略prisma目录
+!prisma
+!prisma/**

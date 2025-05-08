@@ -5,7 +5,8 @@ FROM base AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm install
+COPY prisma ./prisma
+RUN npm install --ignore-scripts
 
 # 构建应用
 FROM base AS builder
@@ -15,9 +16,13 @@ COPY . .
 # 确保prisma目录和schema文件存在
 RUN test -d ./prisma && test -f ./prisma/schema.prisma || (echo "Error: prisma/schema.prisma not found" && exit 1)
 
+# 显式运行postinstall脚本
+COPY run_prisma.sh .
+RUN chmod +x ./run_prisma.sh
+RUN ./run_prisma.sh
 
-# 生成Prisma客户端
-RUN npx prisma generate --schema=./prisma/schema.prisma
+
+# 使用之前的脚本已经生成了Prisma客户端
 
 # 构建应用
 RUN npm run build
