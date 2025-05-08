@@ -63,7 +63,8 @@ export async function initializeTracking(): Promise<void> {
             { lastPolledAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }, // 最近24小时内有轮询
             { isActive: false } // 但当前未标记为活跃
           ]
-        }
+        },
+        include: { timeSlots: true }
       });
       
       if (recentlyActiveRules.length > 0) {
@@ -78,7 +79,7 @@ export async function initializeTracking(): Promise<void> {
           });
           
           // 将这些恢复的规则添加到要启动的规则列表中
-          rules.push({...rule, isActive: true, timeSlots: []});
+          rules.push(rule);
         }
         
         console.log(`[Boot] 现在有 ${rules.length} 个规则需要启动`);
@@ -151,7 +152,12 @@ export async function initializeTracking(): Promise<void> {
         const rule = rules[i];
         try {
           console.log(`[Boot] 启动规则追踪 (${i+1}/${ruleCount}): ${rule.id} (${rule.name})`);
-          await trackingService.startTracking(rule);
+          // 处理类型兼容性问题
+          const trackingRule = {
+            ...rule,
+            notificationPhone: rule.notificationPhone || undefined
+          };
+          await trackingService.startTracking(trackingRule);
         } catch (error) {
           console.error(`[Boot] 初始化规则追踪失败: ${rule.id} (${rule.name})`, error);
         }

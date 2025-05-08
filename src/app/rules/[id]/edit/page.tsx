@@ -21,6 +21,9 @@ export default async function EditRulePage({ params }: EditRulePageProps) {
     where: {
       id: params.id,
     },
+    include: {
+      timeSlots: true
+    }
   });
 
   if (!rule) {
