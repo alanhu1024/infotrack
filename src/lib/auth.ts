@@ -80,11 +80,13 @@ export async function isAdminSession(): Promise<boolean> {
     // 获取用户信息
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { role: true }
+      select: { email: true }
     });
     
-    // 检查是否为管理员角色
-    return user?.role === 'ADMIN';
+    // 根据电子邮件地址判断是否为管理员
+    // 这里可以使用环境变量来指定管理员邮箱或一个邮箱列表
+    const adminEmails = (process.env.ADMIN_EMAILS || 'admin@example.com').split(',');
+    return user?.email ? adminEmails.includes(user.email) : false;
   } catch (error) {
     console.error('[Auth] 检查管理员权限失败:', error);
     return false;
