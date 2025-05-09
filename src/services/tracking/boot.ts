@@ -245,6 +245,9 @@ export function setupAutoInitialization() {
       const activeRuleIds = trackingService['twitter'].getActiveRuleIds();
       console.log(`[Boot] 自动初始化完成，当前有 ${activeRuleIds.length} 个活跃规则`);
       
+      // 设置定期清理过期通知记录的任务
+      setupCleanupTasks();
+      
       // 添加一个额外的健康检查步骤
       setTimeout(async () => {
         const activeRuleIds = trackingService['twitter'].getActiveRuleIds();
@@ -272,6 +275,33 @@ export function setupAutoInitialization() {
       }
     }
   }, 5 * 1000);
+}
+
+/**
+ * 设置定期清理任务
+ */
+function setupCleanupTasks() {
+  console.log('[Boot] 设置定期清理任务...');
+  
+  // 每24小时清理一次过期通知记录
+  setInterval(() => {
+    console.log('[Boot] 执行定期清理过期通知记录...');
+    try {
+      trackingService.clearOldNotifiedTweets(7); // 清理7天前的通知记录
+    } catch (error) {
+      console.error('[Boot] 清理过期通知记录失败:', error);
+    }
+  }, 24 * 60 * 60 * 1000); // 24小时
+  
+  // 初始执行一次清理
+  setTimeout(() => {
+    console.log('[Boot] 初始执行一次通知记录清理...');
+    try {
+      trackingService.clearOldNotifiedTweets(7);
+    } catch (error) {
+      console.error('[Boot] 初始清理过期通知记录失败:', error);
+    }
+  }, 60 * 1000); // 启动1分钟后执行
 }
 
 // 在模块加载时自动执行初始化设置

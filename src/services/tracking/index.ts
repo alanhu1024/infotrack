@@ -89,6 +89,12 @@ export class TrackingService {
       createdAt: Date;
     }): Promise<TweetProcessResult> => {
       try {
+        // 首先检查该推文是否已经处理过，避免重复处理
+        if (this.notifiedTweets.has(tweet.id)) {
+          console.log(`[TrackingService] 推文 ${tweet.id} 已经通知过，跳过处理`);
+          return { matched: false, score: 0, explanation: "已通知过的推文" };
+        }
+        
         console.log(`[TrackingService] 检测到推文:`, tweet);
         // 动态选择大模型服务
         let llm;
@@ -181,8 +187,8 @@ export class TrackingService {
       // 在轮询开始时重置匹配推文列表
       matchedTweets.length = 0;
       
-      // 先重置通知状态，确保每次都能发送通知
-      this.resetNotifiedTweets();
+      // 不再每次轮询都重置通知状态
+      // this.resetNotifiedTweets(); // 删除这行，改为在处理通知时检查是否已通知
       
       // 处理轮询结果的包装回调
       const wrappedCallback = async (tweet: any) => {
@@ -420,8 +426,33 @@ export class TrackingService {
   // 清理过期的已通知推文记录
   clearOldNotifiedTweets(maxAgeDays: number = 7): void {
     console.log(`[TrackingService] 清理超过 ${maxAgeDays} 天的已通知推文记录`);
-    // 该方法可以在未来实现更复杂的清理逻辑
-    // 目前简单实现可以跳过，仅保留接口
+    
+    // 实现清理逻辑：从数据库查询超过maxAgeDays天的推文ID，从notifiedTweets集合中移除
+    this.prisma.tweet.findMany({
+      where: {
+        createdAt: {
+          lt: new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000)
+        }
+      },
+      select: {
+        tweetId: true
+      }
+    }).then((oldTweets: Array<{tweetId: string}>) => {
+      const oldTweetIds = oldTweets.map((t: {tweetId: string}) => t.tweetId);
+      console.log(`[TrackingService] 找到 ${oldTweetIds.length} 条超过 ${maxAgeDays} 天的旧推文`);
+      
+      let removedCount = 0;
+      oldTweetIds.forEach((id: string) => {
+        if (this.notifiedTweets.has(id)) {
+          this.notifiedTweets.delete(id);
+          removedCount++;
+        }
+      });
+      
+      console.log(`[TrackingService] 已从通知记录中移除 ${removedCount} 条旧推文ID`);
+    }).catch((error: Error) => {
+      console.error(`[TrackingService] 清理过期通知记录失败:`, error);
+    });
   }
   
   // 恢复最近活跃的规则追踪
@@ -532,10 +563,24 @@ export class TrackingService {
       // 如果设置了通知手机号码，使用百度智能外呼
       if (ruleDetails?.notificationPhone) {
         try {
-          // 清空已通知推文记录，确保本次一定发送通知
-          this.resetNotifiedTweets();
-          console.log(`[TrackingService] 已重置通知状态，确保能发送新通知`);
+          // 检查这些推文是否已经通知过
+          const alreadyNotified = tweets.filter(t => this.notifiedTweets.has(t.id));
+          if (alreadyNotified.length === tweets.length) {
+            console.log(`[TrackingService] 所有 ${tweets.length} 条推文都已经通知过，跳过本次通知`);
+            return;
+          }
           
+          // 只保留未通知过的推文
+          const newTweets = tweets.filter(t => !this.notifiedTweets.has(t.id));
+          if (newTweets.length === 0) {
+            console.log(`[TrackingService] 过滤后没有新的未通知推文，跳过本次通知`);
+            return;
+          }
+          
+          console.log(`[TrackingService] 共有 ${tweets.length} 条匹配推文，其中 ${newTweets.length} 条是新推文需要通知`);
+          
+          // 清空已通知推文记录，确保本次一定发送通知
+          // this.resetNotifiedTweets(); // 删除这行，不再每次都重置通知状态
           console.log(`[TrackingService] 将通过百度智能外呼通知用户: ${ruleDetails.notificationPhone}`);
           const baiduCallingService = notificationServices.get('baidu-calling');
           
@@ -543,9 +588,9 @@ export class TrackingService {
             console.log(`[TrackingService] 已获取百度智能外呼服务实例，准备发送通知`);
             
             // 选择得分最高的推文作为通知内容
-            const highestScoringTweet = tweets.reduce(
+            const highestScoringTweet = newTweets.reduce(
               (highest, current) => current.score > highest.score ? current : highest, 
-              tweets[0]
+              newTweets[0]
             );
             
             console.log(`[TrackingService] 选择得分最高的推文作为通知内容:`, JSON.stringify({
@@ -558,10 +603,10 @@ export class TrackingService {
               await baiduCallingService.send({
                 userId: ruleDetails.notificationPhone,
                 channelId: 'phone',
-                title: `检测到${tweets.length}条匹配规则"${ruleDetails.name}"的推文`,
-                content: `您有重要通知，本次检测到${tweets.length}条匹配规则"${ruleDetails.name}"的内容，可以打开infotrack查看详情。`,
+                title: `检测到${newTweets.length}条匹配规则"${ruleDetails.name}"的推文`,
+                content: `您有重要通知，本次检测到${newTweets.length}条匹配规则"${ruleDetails.name}"的内容，可以打开infotrack查看详情。`,
                 metadata: {
-                  matchCount: tweets.length,
+                  matchCount: newTweets.length,
                   tweetId: highestScoringTweet.id,
                   authorId: highestScoringTweet.authorId,
                   ruleId: rule.id,
@@ -574,11 +619,11 @@ export class TrackingService {
               console.log(`[TrackingService] 百度智能外呼通知已发送成功`);
               
               // 标记所有推文为已通知
-              tweets.forEach(t => {
+              newTweets.forEach(t => {
                 this.notifiedTweets.add(t.id);
               });
               
-              console.log(`[TrackingService] 已成功发送百度智能外呼通知并记录 ${tweets.length} 条推文为已通知状态`);
+              console.log(`[TrackingService] 已成功发送百度智能外呼通知并记录 ${newTweets.length} 条推文为已通知状态`);
             } catch (sendError) {
               console.error(`[TrackingService] 百度智能外呼发送通知失败:`, sendError);
             }
