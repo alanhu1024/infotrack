@@ -80,12 +80,9 @@ export class TwitterService {
     }
     
     console.log('[TwitterService] 创建新实例 (单例)');
-    this.client = new TwitterApi({
-      appKey: env.TWITTER_API_KEY,
-      appSecret: env.TWITTER_API_SECRET,
-      accessToken: env.TWITTER_ACCESS_TOKEN,
-      accessSecret: env.TWITTER_ACCESS_SECRET,
-    });
+    
+    // 初始化会在需要时懒加载，不在构造函数中直接创建
+    this.client = null as unknown as ExtendedTwitterApi;
     
     // 打印当前定时器状态
     console.log(`[TwitterService] 当前全局定时器Map大小: ${this.pollingJobs.size}, keys:`, 
@@ -134,9 +131,9 @@ export class TwitterService {
     }
 
     try {
-      // 通过API配置文件加载实际实现，解决依赖循环问题
-      const { getTwitterModule } = await import('./api-config');
-      this.client = getTwitterModule();
+      // 使用相对路径导入API配置
+      const apiConfig = await import('@/services/twitter/api-config');
+      this.client = apiConfig.getTwitterModule();
       return this.client;
     } catch (error) {
       console.error('[TwitterService] 初始化Twitter API失败:', error);
