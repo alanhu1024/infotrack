@@ -283,13 +283,19 @@ export class TrackingService {
       return shouldPoll;
     }
 
-    // 检查当前时间是否在任何时间段内
+    // 检查当前时间是否在任何时间段内 - 使用北京时间
+    // 创建北京时间对象 (UTC+8)
     const now = new Date();
-    const currentTime = now.toLocaleTimeString('en-US', {
+    const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const currentTime = beijingNow.toLocaleTimeString('zh-CN', {
       hour12: false,
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'Asia/Shanghai'
     });
+    
+    console.log(`[TrackingService] 当前北京时间: ${currentTime}`);
+    
     for (const slot of (rule as any).timeSlots || []) {
       if (currentTime >= slot.startTime && currentTime <= slot.endTime) {
         const lastPoll = rule.lastPolledAt ? new Date(rule.lastPolledAt) : null;

@@ -1,6 +1,7 @@
 import type { TrackingRule, TrackingTimeSlot } from '@/types';
-import { format } from 'date-fns';
+import { format, addHours } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { formatDate } from '@/lib/utils';
 
 interface RuleListProps {
   rules: TrackingRule[];
@@ -69,7 +70,7 @@ export function RuleList({ rules }: RuleListProps) {
                 )}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {format(new Date(rule.createdAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+                {formatDate(rule.createdAt)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm space-x-4">
                 <a href={`/rules/${rule.id}`} className="text-indigo-600 hover:text-indigo-900">

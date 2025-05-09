@@ -375,11 +375,13 @@ export class TwitterService {
     
     console.log(`[TwitterService] 重启规则 ${rule.id} 的轮询`);
     
-    // 检查时间条件
+    // 检查时间条件 - 使用北京时间
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
+    const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const currentHour = beijingNow.getHours();
+    const currentMinute = beijingNow.getMinutes();
     const currentTimeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+    console.log(`[TwitterService] 当前北京时间: ${currentTimeString}`);
     
     // 如果有时间槽配置
     if (rule.timeSlots && rule.timeSlots.length > 0) {
@@ -414,7 +416,7 @@ export class TwitterService {
         const nextSlot = this.findNextTimeSlot(rule.timeSlots, currentTimeString);
         if (nextSlot) {
           const delayMs = this.calculateDelayToTime(nextSlot.startTime);
-          console.log(`[TwitterService] 安排在 ${nextSlot.startTime} (${delayMs}ms后) 启动规则 ${rule.id} 的轮询`);
+          console.log(`[TwitterService] 安排在 ${nextSlot.startTime} (${delayMs/1000}秒后) 启动规则 ${rule.id} 的轮询`);
           
           // 创建延迟任务
           const delayKey = `${rule.id}_delay`;
@@ -467,17 +469,24 @@ export class TwitterService {
   // 计算到指定时间的延迟毫秒数
   private calculateDelayToTime(timeString: string): number {
     const [hours, minutes] = timeString.split(':').map(Number);
+    // 创建当前北京时间
     const now = new Date();
-    const target = new Date();
+    const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
     
+    // 创建目标北京时间
+    const target = new Date(beijingNow);
     target.setHours(hours, minutes, 0, 0);
     
     // 如果目标时间已经过去，设置为明天
-    if (target <= now) {
+    if (target <= beijingNow) {
       target.setDate(target.getDate() + 1);
     }
     
-    return target.getTime() - now.getTime();
+    // 计算毫秒差值（需要转回UTC时间差）
+    const beijingDelay = target.getTime() - beijingNow.getTime();
+    console.log(`[TwitterService] 计划在北京时间 ${hours}:${minutes.toString().padStart(2, '0')} 执行，延迟 ${beijingDelay/1000} 秒`);
+    
+    return beijingDelay;
   }
 
   // 获取已保存的定时器信息
