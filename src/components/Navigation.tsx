@@ -28,7 +28,7 @@ const Navigation = () => {
                 const isActive = 
                   item.href === '/' 
                     ? pathname === '/'
-                    : pathname.startsWith(item.href);
+                    : pathname && pathname.startsWith(item.href);
                 
                 return (
                   <Link
