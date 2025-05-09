@@ -56,6 +56,19 @@ interface Tweet {
 // 存储格式: { rule_id: intervalId, rule_id_delay: timeoutId }
 type PollingJobsMap = Map<string, NodeJS.Timeout>;
 
+// 添加轮询队列类型，支持轮询完成事件
+interface PollingQueueItem {
+  tweets: Array<{
+    id: string;
+    text: string;
+    authorId: string;
+    score?: number;
+    explanation?: string;
+  }>;
+  processing: boolean;
+  onComplete?: (tweets: any[]) => Promise<void>;
+}
+
 export class TwitterService {
   private client: ExtendedTwitterApi;
   private pollingJobs: PollingJobsMap;
@@ -71,8 +84,13 @@ export class TwitterService {
     return global.__twitterNotifiedTweets as Set<string>;
   }
 
+  // 添加轮询队列Map
+  private pollingQueue: Map<string, PollingQueueItem>;
+
   constructor() {
     this.pollingJobs = new Map();
+    // 初始化轮询队列
+    this.pollingQueue = new Map();
     console.log('[TwitterService] 初始化');
     
     if (twitterServiceInstance) {
@@ -257,12 +275,23 @@ export class TwitterService {
           }
   }
 
-  // 开始按规则轮询推文
-  async startPolling(rule: TrackingRule, callback: (tweet: Tweet) => Promise<any>): Promise<void> {
+  // 修改开始轮询方法，支持轮询完成回调
+  async startPolling(
+    rule: TrackingRule, 
+    callback: (tweet: Tweet) => Promise<any>,
+    onComplete?: (tweets: any[]) => Promise<void>
+  ): Promise<void> {
     try {
       // 验证规则
       console.log(`[TwitterService] 启动规则 ${rule.id} (${rule.name}) 的轮询，间隔: ${rule.pollingInterval}秒`);
-                    
+      
+      // 创建或更新轮询队列
+      this.pollingQueue.set(rule.id, {
+        tweets: [],
+        processing: false,
+        onComplete
+      });
+      
       // 检查用户是否存在
       await this.fetchUserByUsername(rule.twitterUsername)
         .catch(error => {
@@ -283,9 +312,48 @@ export class TwitterService {
               return;
             }
 
-      // 立即开始第一次检查
+      // 修改立即检查逻辑，启动处理标志
       console.log(`[TwitterService] 开始首次检查: ${rule.id}`);
-      await this.checkTweets(rule, callback);
+      const queueItem = this.pollingQueue.get(rule.id);
+      if (queueItem) {
+        queueItem.processing = true;
+        queueItem.tweets = []; // 清空队列中的推文
+      }
+      
+      // 执行检查并捕获所有推文
+      await this.checkTweets(rule, async (tweet) => {
+        const result = await callback(tweet);
+        
+        // 如果结果表示匹配，添加到队列
+        if (result && result.matched && queueItem) {
+          queueItem.tweets.push({
+            id: tweet.id,
+            text: tweet.text,
+            authorId: tweet.authorId,
+            score: result.score,
+            explanation: result.explanation
+          });
+        }
+        
+        return result;
+      });
+      
+      // 检查完成后，调用完成回调
+      if (queueItem) {
+        queueItem.processing = false;
+        console.log(`[TwitterService] 首次检查完成: ${rule.id}, 匹配推文: ${queueItem.tweets.length} 条`);
+        
+        // 如果有完成回调且有匹配推文，调用它
+        if (queueItem.onComplete && queueItem.tweets.length > 0) {
+          try {
+            await queueItem.onComplete([...queueItem.tweets]);
+            // 调用完成后清空队列
+            queueItem.tweets = [];
+          } catch (error) {
+            console.error(`[TwitterService] 处理轮询完成回调出错:`, error);
+          }
+        }
+      }
 
       // 设置定期轮询
       console.log(`[TwitterService] 设置 ${rule.pollingInterval}秒 轮询间隔: ${rule.id}`);
@@ -316,8 +384,47 @@ export class TwitterService {
           notificationPhone: freshRule.notificationPhone || undefined
         };
     
-        // 执行检查
-        await this.checkTweets(trackingRule, callback);
+        // 修改执行检查部分，处理轮询队列
+        const queueItem = this.pollingQueue.get(rule.id);
+        if (queueItem) {
+          queueItem.processing = true;
+          queueItem.tweets = []; // 清空队列中的推文
+        }
+        
+        // 执行检查并捕获所有推文
+        await this.checkTweets(trackingRule, async (tweet) => {
+          const result = await callback(tweet);
+          
+          // 如果结果表示匹配，添加到队列
+          if (result && result.matched && queueItem) {
+            queueItem.tweets.push({
+              id: tweet.id,
+              text: tweet.text,
+              authorId: tweet.authorId,
+              score: result.score,
+              explanation: result.explanation
+            });
+          }
+          
+          return result;
+        });
+        
+        // 检查完成后，调用完成回调
+        if (queueItem) {
+          queueItem.processing = false;
+          console.log(`[TwitterService] 轮询完成: ${rule.id}, 匹配推文: ${queueItem.tweets.length} 条`);
+          
+          // 如果有完成回调且有匹配推文，调用它
+          if (queueItem.onComplete && queueItem.tweets.length > 0) {
+            try {
+              await queueItem.onComplete([...queueItem.tweets]);
+              // 调用完成后清空队列
+              queueItem.tweets = [];
+            } catch (error) {
+              console.error(`[TwitterService] 处理轮询完成回调出错:`, error);
+            }
+          }
+        }
       }, rule.pollingInterval * 1000);
 
       // 保存轮询作业
@@ -330,7 +437,7 @@ export class TwitterService {
     }
   }
 
-  // 停止轮询
+  // 修改停止轮询方法，清理轮询队列
   stopPolling(ruleId: string): void {
     console.log(`[TwitterService] 停止规则 ${ruleId} 的轮询`);
 
@@ -350,10 +457,20 @@ export class TwitterService {
       this.pollingJobs.delete(delayKey);
       console.log(`[TwitterService] 已移除延迟任务: ${delayKey}`);
     }
+
+    // 清理轮询队列
+    if (this.pollingQueue.has(ruleId)) {
+      this.pollingQueue.delete(ruleId);
+      console.log(`[TwitterService] 已移除轮询队列: ${ruleId}`);
+    }
   }
 
   // 重启轮询
-  async restartPolling(rule: TrackingRule, callback: (tweet: Tweet) => Promise<any>): Promise<void> {
+  async restartPolling(
+    rule: TrackingRule, 
+    callback: (tweet: Tweet) => Promise<any>,
+    onComplete?: (tweets: any[]) => Promise<void>
+  ): Promise<void> {
     // 先停止轮询
     this.stopPolling(rule.id);
     
@@ -407,7 +524,7 @@ export class TwitterService {
             ...freshRule,
             notificationPhone: freshRule.notificationPhone || undefined
           };
-          this.startPolling(trackingRule, callback);
+          this.startPolling(trackingRule, callback, onComplete);
         }
         } else {
         console.log(`[TwitterService] 当前时间 ${currentTimeString} 不在规则 ${rule.id} 的任何时间段内，跳过启动`);
@@ -441,8 +558,8 @@ export class TwitterService {
                 ...freshRule,
                 notificationPhone: freshRule.notificationPhone || undefined
               };
-              this.startPolling(trackingRule, callback);
-  }
+              this.startPolling(trackingRule, callback, onComplete);
+            }
           }, delayMs);
           
           this.pollingJobs.set(delayKey, delayId);
@@ -450,7 +567,7 @@ export class TwitterService {
       }
     } else {
       console.log(`[TwitterService] 规则 ${rule.id} 没有时间段配置，直接启动轮询`);
-      this.startPolling(rule, callback);
+      this.startPolling(rule, callback, onComplete);
     }
   }
 

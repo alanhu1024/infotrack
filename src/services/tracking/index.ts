@@ -72,15 +72,6 @@ export class TrackingService {
 
     console.log(`[TrackingService] 启动规则追踪: ${rule.id} (${rule.name})`);
 
-    // 存储匹配的推文信息，用于后续通知
-    const matchedTweets: Array<{
-      id: string;
-      text: string;
-      authorId: string;
-      score: number;
-      explanation: string;
-    }> = [];
-
     // 处理推文的回调函数
     const handleTweet = async (tweet: {
       id: string;
@@ -124,7 +115,7 @@ export class TrackingService {
           // 保存推文到数据库
           await this.prisma.tweet.upsert({
             where: { tweetId: tweet.id },
-            update: {}, // 已存在时不做任何更新
+            update: {}, //.已存在时不做任何更新
             create: {
               tweetId: tweet.id,
               authorId: tweet.authorId,
@@ -140,17 +131,8 @@ export class TrackingService {
           });
           console.log(`[TrackingService] 推文已保存:`, tweet.id);
           
-          // 添加到匹配推文列表，稍后处理通知
-          matchedTweets.push({
-            id: tweet.id,
-            text: tweet.text,
-            authorId: tweet.authorId,
-            score: analysis.relevanceScore,
-            explanation: analysis.explanation
-          });
-          
-          // 不再立即发送通知，而是等待轮询结束后统一处理
-          console.log(`[TrackingService] 推文已添加到匹配列表，将在轮询结束后统一发送通知`);
+          // 不再将推文添加到matchedTweets数组，而是让TwitterService的轮询队列来处理
+          console.log(`[TrackingService] 推文已标记为匹配，将在轮询结束后统一发送通知`);
         } else {
           console.log(`[TrackingService] 推文相关性分数过低，未保存。`);
         }
@@ -181,51 +163,30 @@ export class TrackingService {
       return result;
     };
 
-    // 修改Twitter服务的startPolling方法，增加标记确保能捕获一次完整轮询的结束
-    const originalStartPolling = this.twitter.startPolling.bind(this.twitter);
-    this.twitter.startPolling = async (rule, callback) => {
-      // 在轮询开始时重置匹配推文列表
-      matchedTweets.length = 0;
+    // 轮询完成处理函数 - 处理通知
+    const handlePollingComplete = async (matchedTweets: Array<{
+      id: string;
+      text: string;
+      authorId: string;
+      score: number;
+      explanation: string;
+    }>) => {
+      console.log(`[TrackingService] 轮询完成回调: ${rule.id}, 匹配推文数量: ${matchedTweets.length}`);
       
-      // 不再每次轮询都重置通知状态
-      // this.resetNotifiedTweets(); // 删除这行，改为在处理通知时检查是否已通知
-      
-      // 处理轮询结果的包装回调
-      const wrappedCallback = async (tweet: any) => {
-        const result = await callback(tweet);
-        return result;
-      };
-
-      // 标记轮询开始
-      console.log(`[TrackingService] 开始一次完整轮询: ${rule.id}`);
-      
-      try {
-        // 调用原始startPolling方法
-        await originalStartPolling(rule, wrappedCallback);
+      if (matchedTweets.length > 0) {
+        // 轮询完成，有匹配推文，处理通知
+        console.log(`[TrackingService] 轮询完成，处理 ${matchedTweets.length} 条匹配推文的通知`);
         
-        // 当原始startPolling方法执行完成，说明此次轮询已结束
-        console.log(`[TrackingService] 轮询结束: ${rule.id}, 匹配推文数量: ${matchedTweets.length}`);
-        
-        // 轮询完成后，如果有匹配推文，统一发送通知
-        if (matchedTweets.length > 0) {
-          console.log(`[TrackingService] 本次轮询中匹配推文数量: ${matchedTweets.length}，统一发送一次通知`);
-          
-          // 调用处理通知的方法
-          await this.handleMatchedTweets(rule, matchedTweets);
-          
-          // 清空匹配推文列表，为下次轮询准备
-          matchedTweets.length = 0;
-        } else {
-          console.log(`[TrackingService] 本次轮询中没有匹配推文，不发送通知`);
-        }
-      } catch (error) {
-        console.error(`[TrackingService] 轮询过程中发生错误:`, error);
+        // 调用通知处理方法
+        await this.handleMatchedTweets(rule, matchedTweets);
+      } else {
+        console.log(`[TrackingService] 本次轮询未找到匹配推文，不发送通知`);
       }
     };
 
-    // 启动轮询
+    // 直接使用TwitterService的startPolling方法并传入轮询完成回调
     console.log(`[TrackingService] 启动 Twitter 轮询...`);
-    await this.twitter.startPolling(rule, handleTweetWithUpdate);
+    await this.twitter.startPolling(rule, handleTweetWithUpdate, handlePollingComplete);
   }
 
   async stopTracking(ruleId: string, ruleName?: string): Promise<void> {
@@ -514,9 +475,25 @@ export class TrackingService {
   resetNotificationStatus(ruleId?: string): void {
     if (ruleId) {
       // 如果提供了规则ID，只清除与该规则相关的通知状态
-      // 由于通知状态只保存推文ID，无法直接知道哪些推文属于哪个规则
-      // 这里实现较为困难，暂不实现
       console.log(`[TrackingService] 需要先查询规则 ${ruleId} 相关的推文，然后才能清除其通知状态`);
+      
+      // 从数据库查询该规则的所有推文ID
+      this.prisma.tweet.findMany({
+        where: { matchedRuleId: ruleId },
+        select: { tweetId: true }
+      }).then((tweets: Array<{tweetId: string}>) => {
+        let resetCount = 0;
+        tweets.forEach((tweet: {tweetId: string}) => {
+          if (this.notifiedTweets.has(tweet.tweetId)) {
+            this.notifiedTweets.delete(tweet.tweetId);
+            resetCount++;
+          }
+        });
+        
+        console.log(`[TrackingService] 重置了规则 ${ruleId} 相关的 ${resetCount} 条推文通知状态`);
+      }).catch((error: Error) => {
+        console.error(`[TrackingService] 重置规则 ${ruleId} 通知状态失败:`, error);
+      });
     } else {
       // 清空所有通知状态
       this.notifiedTweets.clear();
