@@ -223,8 +223,8 @@ export class TwitterService {
 
       if (tweets.length === 0) {
         console.log(`[TwitterService] @${rule.twitterUsername} 没有新推文`);
-      return;
-    }
+        return;
+      }
     
       // 处理所有获取到的推文
       console.log(`[TwitterService] 处理 ${tweets.length} 条新推文`);
@@ -236,10 +236,6 @@ export class TwitterService {
       
       // 使用临时变量保存最新的推文ID
       let latestTweetId = lastProcessedTweetId;
-        
-      // 获取轮询队列项
-      const queueItem = this.pollingQueue.get(rule.id);
-      console.log(`[TwitterService] 轮询队列状态: ${queueItem ? '存在' : '不存在'}, 匹配推文数: ${queueItem?.tweets.length || 0}`);
       
       // 处理每条推文
       for (const tweet of sortedTweets) {
@@ -253,18 +249,6 @@ export class TwitterService {
           // 更新最新处理的推文ID
           if (!latestTweetId || tweet.id > latestTweetId) {
             latestTweetId = tweet.id;
-          }
-          
-          // 如果结果表示匹配，添加到队列
-          if (result && result.matched === true && queueItem) {
-            console.log(`[TwitterService] 添加匹配推文 ${tweet.id} 到轮询队列`);
-            queueItem.tweets.push({
-              id: tweet.id,
-              text: tweet.text,
-              authorId: tweet.authorId,
-              score: result.score || 0,
-              explanation: result.explanation || ''
-            });
           }
         } catch (error) {
           console.error(`[TwitterService] 处理推文 ${tweet.id} 失败:`, error);
@@ -281,35 +265,10 @@ export class TwitterService {
         console.log(`[TwitterService] 更新规则 ${rule.id} 的最后处理推文ID: ${latestTweetId}`);
           
         // 更新规则的最后处理推文ID
-            await prisma.trackingRule.update({
+        await prisma.trackingRule.update({
           where: { id: rule.id },
           data: { lastProcessedTweetId: latestTweetId }
-            });
-      }
-
-      // 轮询完成后，调用回调
-      if (queueItem) {
-        queueItem.processing = false;
-        const matchingTweetCount = queueItem.tweets.length;
-        console.log(`[TwitterService] 轮询完成后队列状态: 处理=${queueItem.processing}, 匹配推文=${matchingTweetCount}`);
-        
-        if (matchingTweetCount > 0 && queueItem.onComplete) {
-          console.log(`[TwitterService] 发现 ${matchingTweetCount} 条匹配推文，准备调用完成回调`);
-          try {
-            // 创建副本避免回调中可能的修改
-            const tweetsToProcess = [...queueItem.tweets];
-            await queueItem.onComplete(tweetsToProcess);
-            console.log(`[TwitterService] 完成回调执行成功`);
-            // 清空队列
-            queueItem.tweets = [];
-          } catch (error) {
-            console.error(`[TwitterService] 执行轮询完成回调出错:`, error);
-          }
-        } else if (matchingTweetCount > 0) {
-          console.log(`[TwitterService] 有 ${matchingTweetCount} 条匹配推文，但未设置完成回调`);
-        } else {
-          console.log(`[TwitterService] 没有匹配推文，不触发回调`);
-        }
+        });
       }
 
     } catch (error) {
@@ -354,48 +313,57 @@ export class TwitterService {
               return;
             }
 
-      // 修改立即检查逻辑，启动处理标志
+      // 添加新方法：主动处理队列
+      const processQueue = async () => {
+        const queueItem = this.pollingQueue.get(rule.id);
+        console.log(`[TwitterService] 主动处理队列: ${rule.id}, 队列状态:`, queueItem ? 
+          `存在(处理中:${queueItem.processing}, 推文数:${queueItem.tweets.length})` : '不存在');
+          
+        if (queueItem && queueItem.tweets.length > 0 && queueItem.onComplete) {
+          try {
+            console.log(`[TwitterService] 发现队列中有 ${queueItem.tweets.length} 条匹配推文，执行回调`);
+            const tweetsToProcess = [...queueItem.tweets];
+            // 清空队列，避免重复处理
+            queueItem.tweets = [];
+            // 调用回调
+            await queueItem.onComplete(tweetsToProcess);
+            console.log(`[TwitterService] 队列回调执行成功`);
+          } catch (error) {
+            console.error(`[TwitterService] 处理队列回调失败:`, error);
+          }
+        }
+      };
+
+      // 修改第一次检查的处理逻辑
       console.log(`[TwitterService] 开始首次检查: ${rule.id}`);
-      const queueItem = this.pollingQueue.get(rule.id);
-      if (queueItem) {
-        queueItem.processing = true;
-        queueItem.tweets = []; // 清空队列中的推文
-      }
       
       // 执行检查并捕获所有推文
       await this.checkTweets(rule, async (tweet) => {
         const result = await callback(tweet);
         
-        // 如果结果表示匹配，添加到队列
-        if (result && result.matched && queueItem) {
-          queueItem.tweets.push({
-            id: tweet.id,
-            text: tweet.text,
-            authorId: tweet.authorId,
-            score: result.score,
-            explanation: result.explanation
-          });
+        // 如果结果表示匹配，直接添加到队列
+        if (result && result.matched === true) {
+          const queueItem = this.pollingQueue.get(rule.id);
+          if (queueItem) {
+            console.log(`[TwitterService] 直接添加匹配推文 ${tweet.id} 到队列`);
+            queueItem.tweets.push({
+              id: tweet.id,
+              text: tweet.text,
+              authorId: tweet.authorId,
+              score: result.score || 0,
+              explanation: result.explanation || ''
+            });
+          } else {
+            console.log(`[TwitterService] 警告：队列项不存在，无法添加推文 ${tweet.id}`);
+          }
         }
         
         return result;
       });
       
-      // 检查完成后，调用完成回调
-      if (queueItem) {
-        queueItem.processing = false;
-        console.log(`[TwitterService] 首次检查完成: ${rule.id}, 匹配推文: ${queueItem.tweets.length} 条`);
-        
-        // 如果有完成回调且有匹配推文，调用它
-        if (queueItem.onComplete && queueItem.tweets.length > 0) {
-          try {
-            await queueItem.onComplete([...queueItem.tweets]);
-            // 调用完成后清空队列
-            queueItem.tweets = [];
-          } catch (error) {
-            console.error(`[TwitterService] 处理轮询完成回调出错:`, error);
-          }
-        }
-      }
+      // 首次检查完成后，处理队列
+      console.log(`[TwitterService] 首次检查完成，处理队列...`);
+      await processQueue();
 
       // 设置定期轮询
       console.log(`[TwitterService] 设置 ${rule.pollingInterval}秒 轮询间隔: ${rule.id}`);
@@ -426,47 +394,31 @@ export class TwitterService {
           notificationPhone: freshRule.notificationPhone || undefined
         };
     
-        // 修改执行检查部分，处理轮询队列
-        const queueItem = this.pollingQueue.get(rule.id);
-        if (queueItem) {
-          queueItem.processing = true;
-          queueItem.tweets = []; // 清空队列中的推文
-        }
-        
-        // 执行检查并捕获所有推文
+        // 修改执行检查部分，强制捕获处理结果
         await this.checkTweets(trackingRule, async (tweet) => {
           const result = await callback(tweet);
           
-          // 如果结果表示匹配，添加到队列
-          if (result && result.matched && queueItem) {
-            queueItem.tweets.push({
-              id: tweet.id,
-              text: tweet.text,
-              authorId: tweet.authorId,
-              score: result.score,
-              explanation: result.explanation
-            });
+          // 直接在这里处理匹配结果
+          if (result && result.matched === true) {
+            const queueItem = this.pollingQueue.get(rule.id);
+            if (queueItem) {
+              console.log(`[TwitterService] 直接添加匹配推文 ${tweet.id} 到队列`);
+              queueItem.tweets.push({
+                id: tweet.id,
+                text: tweet.text,
+                authorId: tweet.authorId,
+                score: result.score || 0,
+                explanation: result.explanation || ''
+              });
+            }
           }
           
           return result;
         });
         
-        // 检查完成后，调用完成回调
-        if (queueItem) {
-          queueItem.processing = false;
-          console.log(`[TwitterService] 轮询完成: ${rule.id}, 匹配推文: ${queueItem.tweets.length} 条`);
-          
-          // 如果有完成回调且有匹配推文，调用它
-          if (queueItem.onComplete && queueItem.tweets.length > 0) {
-            try {
-              await queueItem.onComplete([...queueItem.tweets]);
-              // 调用完成后清空队列
-              queueItem.tweets = [];
-            } catch (error) {
-              console.error(`[TwitterService] 处理轮询完成回调出错:`, error);
-            }
-          }
-        }
+        // 轮询完成后，强制处理队列
+        console.log(`[TwitterService] 轮询完成，处理队列...`);
+        await processQueue();
       }, rule.pollingInterval * 1000);
 
       // 保存轮询作业
