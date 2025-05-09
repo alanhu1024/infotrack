@@ -237,18 +237,35 @@ export class TwitterService {
       // 使用临时变量保存最新的推文ID
       let latestTweetId = lastProcessedTweetId;
         
+      // 获取轮询队列项
+      const queueItem = this.pollingQueue.get(rule.id);
+      console.log(`[TwitterService] 轮询队列状态: ${queueItem ? '存在' : '不存在'}, 匹配推文数: ${queueItem?.tweets.length || 0}`);
+      
       // 处理每条推文
       for (const tweet of sortedTweets) {
         console.log(`[TwitterService] 处理推文: ${tweet.id}`);
         
         try {
           // 使用回调处理推文
-          await callback(tweet);
+          const result = await callback(tweet);
+          console.log(`[TwitterService] 推文处理结果:`, result ? JSON.stringify({matched: result.matched, score: result.score}) : 'undefined');
           
           // 更新最新处理的推文ID
           if (!latestTweetId || tweet.id > latestTweetId) {
             latestTweetId = tweet.id;
-        }
+          }
+          
+          // 如果结果表示匹配，添加到队列
+          if (result && result.matched === true && queueItem) {
+            console.log(`[TwitterService] 添加匹配推文 ${tweet.id} 到轮询队列`);
+            queueItem.tweets.push({
+              id: tweet.id,
+              text: tweet.text,
+              authorId: tweet.authorId,
+              score: result.score || 0,
+              explanation: result.explanation || ''
+            });
+          }
         } catch (error) {
           console.error(`[TwitterService] 处理推文 ${tweet.id} 失败:`, error);
         }
@@ -270,9 +287,34 @@ export class TwitterService {
             });
       }
 
+      // 轮询完成后，调用回调
+      if (queueItem) {
+        queueItem.processing = false;
+        const matchingTweetCount = queueItem.tweets.length;
+        console.log(`[TwitterService] 轮询完成后队列状态: 处理=${queueItem.processing}, 匹配推文=${matchingTweetCount}`);
+        
+        if (matchingTweetCount > 0 && queueItem.onComplete) {
+          console.log(`[TwitterService] 发现 ${matchingTweetCount} 条匹配推文，准备调用完成回调`);
+          try {
+            // 创建副本避免回调中可能的修改
+            const tweetsToProcess = [...queueItem.tweets];
+            await queueItem.onComplete(tweetsToProcess);
+            console.log(`[TwitterService] 完成回调执行成功`);
+            // 清空队列
+            queueItem.tweets = [];
+          } catch (error) {
+            console.error(`[TwitterService] 执行轮询完成回调出错:`, error);
+          }
+        } else if (matchingTweetCount > 0) {
+          console.log(`[TwitterService] 有 ${matchingTweetCount} 条匹配推文，但未设置完成回调`);
+        } else {
+          console.log(`[TwitterService] 没有匹配推文，不触发回调`);
+        }
+      }
+
     } catch (error) {
       console.error(`[TwitterService] 检查推文时出错:`, error);
-          }
+    }
   }
 
   // 修改开始轮询方法，支持轮询完成回调

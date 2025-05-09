@@ -101,7 +101,7 @@ export class TrackingService {
         console.log(`[TrackingService] 相关性分数: ${analysis.relevanceScore}, 说明: ${analysis.explanation}`);
         
         // 默认结果对象
-        const result = {
+        const result: TweetProcessResult = {
           matched: false,
           score: analysis.relevanceScore,
           explanation: analysis.explanation
@@ -137,7 +137,8 @@ export class TrackingService {
           console.log(`[TrackingService] 推文相关性分数过低，未保存。`);
         }
         
-        // 返回处理结果
+        // 确保返回正确格式的结果
+        console.log(`[TrackingService] 返回推文处理结果:`, JSON.stringify(result));
         return result;
       } catch (error) {
         console.error(`[TrackingService] 处理推文出错:`, error);
@@ -177,15 +178,20 @@ export class TrackingService {
         // 轮询完成，有匹配推文，处理通知
         console.log(`[TrackingService] 轮询完成，处理 ${matchedTweets.length} 条匹配推文的通知`);
         
-        // 调用通知处理方法
-        await this.handleMatchedTweets(rule, matchedTweets);
+        try {
+          // 调用通知处理方法
+          await this.handleMatchedTweets(rule, matchedTweets);
+          console.log(`[TrackingService] 通知处理完成`);
+        } catch (error) {
+          console.error(`[TrackingService] 处理通知出错:`, error);
+        }
       } else {
         console.log(`[TrackingService] 本次轮询未找到匹配推文，不发送通知`);
       }
     };
 
     // 直接使用TwitterService的startPolling方法并传入轮询完成回调
-    console.log(`[TrackingService] 启动 Twitter 轮询...`);
+    console.log(`[TrackingService] 启动 Twitter 轮询，并设置轮询完成回调...`);
     await this.twitter.startPolling(rule, handleTweetWithUpdate, handlePollingComplete);
   }
 
@@ -542,6 +548,8 @@ export class TrackingService {
         try {
           // 检查这些推文是否已经通知过
           const alreadyNotified = tweets.filter(t => this.notifiedTweets.has(t.id));
+          console.log(`[TrackingService] 推文通知状态检查: 总数=${tweets.length}, 已通知=${alreadyNotified.length}`);
+          
           if (alreadyNotified.length === tweets.length) {
             console.log(`[TrackingService] 所有 ${tweets.length} 条推文都已经通知过，跳过本次通知`);
             return;
@@ -556,8 +564,7 @@ export class TrackingService {
           
           console.log(`[TrackingService] 共有 ${tweets.length} 条匹配推文，其中 ${newTweets.length} 条是新推文需要通知`);
           
-          // 清空已通知推文记录，确保本次一定发送通知
-          // this.resetNotifiedTweets(); // 删除这行，不再每次都重置通知状态
+          // 不再重置通知状态
           console.log(`[TrackingService] 将通过百度智能外呼通知用户: ${ruleDetails.notificationPhone}`);
           const baiduCallingService = notificationServices.get('baidu-calling');
           
