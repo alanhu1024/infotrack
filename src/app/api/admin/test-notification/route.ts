@@ -50,7 +50,12 @@ export async function GET(req: NextRequest) {
         // 手动触发队列处理
         try {
           console.log(`[TestNotification] 手动触发通知处理，推文数: ${testTweets.length}`);
-          await trackingService.handleMatchedTweets(rule, testTweets);
+          // 创建符合TrackingRule类型的对象，将null转换为undefined
+          const trackingRule = {
+            ...rule,
+            notificationPhone: rule.notificationPhone || undefined
+          };
+          await trackingService.handleMatchedTweets(trackingRule, testTweets);
           console.log(`[TestNotification] 通知处理完成`);
           
           return NextResponse.json({
