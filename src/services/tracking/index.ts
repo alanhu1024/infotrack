@@ -142,6 +142,16 @@ export class TrackingService {
             score: analysis.relevanceScore,
             explanation: analysis.explanation
           });
+          
+          // 立即处理通知，不等待轮询结束
+          console.log(`[TrackingService] 立即处理匹配推文通知，不等待轮询结束`);
+          await this.handleMatchedTweets(rule, [{
+            id: tweet.id,
+            text: tweet.text,
+            authorId: tweet.authorId,
+            score: analysis.relevanceScore,
+            explanation: analysis.explanation
+          }]);
         } else {
           console.log(`[TrackingService] 推文相关性分数过低，未保存。`);
         }
@@ -465,6 +475,11 @@ export class TrackingService {
       }
 
       console.log(`[TrackingService] 处理 ${tweets.length} 条匹配的推文，准备发送通知`);
+      console.log(`[TrackingService] 匹配推文详情:`, JSON.stringify(tweets.map(t => ({
+        id: t.id,
+        text: t.text,
+        score: t.score
+      })), null, 2));
       
       // 获取规则详细信息，包括手机号码
       const ruleDetails = await this.prisma.trackingRule.findUnique({
@@ -485,41 +500,57 @@ export class TrackingService {
         try {
           // 清空已通知推文记录，确保本次一定发送通知
           this.resetNotifiedTweets();
+          console.log(`[TrackingService] 已重置通知状态，确保能发送新通知`);
           
           console.log(`[TrackingService] 将通过百度智能外呼通知用户: ${ruleDetails.notificationPhone}`);
           const baiduCallingService = notificationServices.get('baidu-calling');
           
           if (baiduCallingService) {
+            console.log(`[TrackingService] 已获取百度智能外呼服务实例，准备发送通知`);
+            
             // 选择得分最高的推文作为通知内容
             const highestScoringTweet = tweets.reduce(
               (highest, current) => current.score > highest.score ? current : highest, 
               tweets[0]
             );
             
-            await baiduCallingService.send({
-              userId: ruleDetails.notificationPhone,
-              channelId: 'phone',
-              title: `检测到${tweets.length}条匹配规则"${ruleDetails.name}"的推文`,
-              content: `您有重要通知，本次检测到${tweets.length}条匹配规则"${ruleDetails.name}"的内容，可以打开infotrack查看详情。`,
-              metadata: {
-                matchCount: tweets.length,
-                tweetId: highestScoringTweet.id,
-                authorId: highestScoringTweet.authorId,
-                ruleId: rule.id,
-                ruleName: rule.name,
-                relevanceScore: highestScoringTweet.score,
-                analysisResult: highestScoringTweet.explanation
-              }
-            });
+            console.log(`[TrackingService] 选择得分最高的推文作为通知内容:`, JSON.stringify({
+              id: highestScoringTweet.id,
+              score: highestScoringTweet.score,
+              text: highestScoringTweet.text
+            }, null, 2));
             
-            // 标记所有推文为已通知
-            tweets.forEach(t => {
-              this.notifiedTweets.add(t.id);
-            });
-            
-            console.log(`[TrackingService] 已成功发送百度智能外呼通知并记录 ${tweets.length} 条推文为已通知状态`);
+            try {
+              await baiduCallingService.send({
+                userId: ruleDetails.notificationPhone,
+                channelId: 'phone',
+                title: `检测到${tweets.length}条匹配规则"${ruleDetails.name}"的推文`,
+                content: `您有重要通知，本次检测到${tweets.length}条匹配规则"${ruleDetails.name}"的内容，可以打开infotrack查看详情。`,
+                metadata: {
+                  matchCount: tweets.length,
+                  tweetId: highestScoringTweet.id,
+                  authorId: highestScoringTweet.authorId,
+                  ruleId: rule.id,
+                  ruleName: rule.name,
+                  relevanceScore: highestScoringTweet.score,
+                  analysisResult: highestScoringTweet.explanation
+                }
+              });
+              
+              console.log(`[TrackingService] 百度智能外呼通知已发送成功`);
+              
+              // 标记所有推文为已通知
+              tweets.forEach(t => {
+                this.notifiedTweets.add(t.id);
+              });
+              
+              console.log(`[TrackingService] 已成功发送百度智能外呼通知并记录 ${tweets.length} 条推文为已通知状态`);
+            } catch (sendError) {
+              console.error(`[TrackingService] 百度智能外呼发送通知失败:`, sendError);
+            }
           } else {
-            console.warn(`[TrackingService] 百度智能外呼服务未配置，跳过通知`);
+            console.warn(`[TrackingService] 百度智能外呼服务未配置或获取失败，跳过通知`);
+            console.log(`[TrackingService] 可用的通知服务:`, Array.from(notificationServices.keys()));
           }
         } catch (notifyError) {
           console.error(`[TrackingService] 发送百度智能外呼通知失败:`, notifyError);
