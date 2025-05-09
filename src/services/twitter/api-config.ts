@@ -1,11 +1,12 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { env } from '@/config/env';
+import { ExtendedTwitterApi } from './types';
 
 /**
  * 获取Twitter API模块
  * 此函数解决了依赖循环问题，并提供TwitterApi实例
  */
-export function getTwitterModule(): TwitterApi {
+export function getTwitterModule(): ExtendedTwitterApi {
   const client = new TwitterApi({
     appKey: env.TWITTER_API_KEY,
     appSecret: env.TWITTER_API_SECRET,
@@ -13,11 +14,8 @@ export function getTwitterModule(): TwitterApi {
     accessSecret: env.TWITTER_ACCESS_SECRET,
   });
 
-  // 扩展TwitterApi类型，添加我们需要的方法
-  const extendedClient = client as TwitterApi & {
-    getUserByUsername: (username: string) => Promise<any>;
-    getUserTweets: (username: string, count: number, sinceId?: string) => Promise<any[]>;
-  };
+  // 直接扩展客户端对象
+  const extendedClient = client as any;
 
   // 添加getUserByUsername方法
   extendedClient.getUserByUsername = async (username: string) => {
@@ -34,8 +32,8 @@ export function getTwitterModule(): TwitterApi {
   extendedClient.getUserTweets = async (username: string, count: number = 10, sinceId?: string) => {
     try {
       // 先获取用户ID
-      const user = await extendedClient.getUserByUsername(username);
-      if (!user || !user.id) {
+      const user = await client.v2.userByUsername(username);
+      if (!user || !user.data || !user.data.id) {
         throw new Error(`无法获取用户 @${username} 的ID`);
       }
 
@@ -50,7 +48,7 @@ export function getTwitterModule(): TwitterApi {
       }
 
       // 获取用户推文
-      const timeline = await client.v2.userTimeline(user.id, params);
+      const timeline = await client.v2.userTimeline(user.data.id, params);
       const tweets = timeline.data.data || [];
 
       // 转换为所需格式

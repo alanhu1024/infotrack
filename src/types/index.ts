@@ -17,6 +17,9 @@ export interface TrackingRule {
   pollingEnabled: boolean;
   pollingInterval: number;
   lastPolledAt: Date | null;
+  lastProcessedTweetId?: string;
+  notificationPhone?: string;
+  timeSlots?: any[];
   createdAt: Date;
   updatedAt: Date;
   llmProvider: string;
@@ -25,12 +28,13 @@ export interface TrackingRule {
 
 export interface Tweet {
   id: string;
-  tweetId: string;
+  text: string;
   authorId: string;
-  content: string;
   createdAt: Date;
-  matchedRuleId: string;
-  analysis: TweetAnalysis;
+  tweetId?: string;
+  content?: string;
+  matchedRuleId?: string;
+  analysis?: TweetAnalysis;
 }
 
 export interface TweetAnalysis {
