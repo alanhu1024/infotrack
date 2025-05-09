@@ -283,32 +283,54 @@ export class TrackingService {
       return shouldPoll;
     }
 
-    // 检查当前时间是否在任何时间段内 - 使用北京时间
-    // 创建北京时间对象 (UTC+8)
-    const now = new Date();
-    const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-    const currentTime = beijingNow.toLocaleTimeString('zh-CN', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Shanghai'
-    });
-    
-    console.log(`[TrackingService] 当前北京时间: ${currentTime}`);
-    
-    for (const slot of (rule as any).timeSlots || []) {
-      if (currentTime >= slot.startTime && currentTime <= slot.endTime) {
-        const lastPoll = rule.lastPolledAt ? new Date(rule.lastPolledAt) : null;
-        if (!lastPoll) {
-          return true;
-        }
-        const shouldPoll = Date.now() - lastPoll.getTime() >= slot.pollingInterval * 1000;
-        console.log(`[TrackingService] 规则 ${rule.id} 时间段[${slot.startTime}-${slot.endTime}]轮询判断:`, shouldPoll);
-        return shouldPoll;
+    try {
+      // 检查当前时间是否在任何时间段内 - 使用北京时间
+      // 创建北京时间对象 (UTC+8)
+      const now = new Date();
+      const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+      const currentTime = beijingNow.toLocaleTimeString('zh-CN', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Shanghai'
+      });
+      
+      console.log(`[TrackingService] 规则 ${rule.id} 时间段检查，当前北京时间: ${currentTime}`);
+      
+      // 记录所有时间段，方便调试
+      const timeSlots = (rule as any).timeSlots || [];
+      if (timeSlots.length > 0) {
+        console.log(`[TrackingService] 规则 ${rule.id} 的时间段配置:`, 
+          timeSlots.map((slot: any) => `${slot.startTime}-${slot.endTime}`).join(', '));
       }
+      
+      for (const slot of timeSlots) {
+        // 检查当前时间是否在指定的时间段内
+        if (currentTime >= slot.startTime && currentTime <= slot.endTime) {
+          const lastPoll = rule.lastPolledAt ? new Date(rule.lastPolledAt) : null;
+          if (!lastPoll) {
+            console.log(`[TrackingService] 规则 ${rule.id} 在时间段 [${slot.startTime}-${slot.endTime}] 内且没有上次轮询记录，开始轮询`);
+            return true;
+          }
+          
+          // 检查是否达到轮询间隔
+          const timeSinceLastPoll = Date.now() - lastPoll.getTime();
+          const shouldPoll = timeSinceLastPoll >= slot.pollingInterval * 1000;
+          
+          console.log(`[TrackingService] 规则 ${rule.id} 时间段[${slot.startTime}-${slot.endTime}] 判断:`, 
+            `距上次轮询${Math.round(timeSinceLastPoll/1000)}秒，间隔${slot.pollingInterval}秒，${shouldPoll ? '可以' : '不需要'}轮询`);
+          
+          return shouldPoll;
+        }
+      }
+      
+      console.log(`[TrackingService] 规则 ${rule.id} 当前时间 ${currentTime} 不在任何配置的时间段内，不轮询`);
+      return false;
+    } catch (error) {
+      console.error(`[TrackingService] 检查规则 ${rule.id} 时间段时出错:`, error);
+      // 出错时默认可以轮询，避免因为时间段判断问题导致无法轮询
+      return true;
     }
-    console.log(`[TrackingService] 规则 ${rule.id} 当前不在任何时间段内，不轮询。`);
-    return false;
   }
 
   private async updateLastPolledAt(ruleId: string) {

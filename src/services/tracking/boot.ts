@@ -52,49 +52,111 @@ export async function initializeTracking(): Promise<void> {
     const activeTimers = trackingService['twitter'].getActiveRuleIds();
     console.log(`[Boot] 当前所有活跃定时器 (${activeTimers.length}个):`, activeTimers);
     
-    // 获取所有活跃规则
-    const rules = await prisma.trackingRule.findMany({
+    // 清理所有现有定时器，确保不会有重复运行的规则
+    cleanupAllTimers();
+    
+    // ========== 改进的规则恢复逻辑 ==========
+    
+    // 1. 获取所有数据库中标记为活跃的规则
+    const activeRules = await prisma.trackingRule.findMany({
       where: { isActive: true },
       include: { timeSlots: true }
     });
-    console.log(`[Boot] 数据库中的活跃规则 (${rules.length}个):`, rules.map((r: { id: string, name: string }) => `${r.id} (${r.name})`));
+    console.log(`[Boot] 数据库中标记为活跃的规则 (${activeRules.length}个):`, 
+      activeRules.map((r: { id: string, name: string }) => `${r.id} (${r.name})`));
     
-    // 额外检查：确保所有规则状态都是最新的
-    try {
-      console.log('[Boot] 检查所有规则的实际状态...');
-      // 获取所有最近有轮询记录的规则，即使它们当前未标记为活跃
-      const recentlyActiveRules = await prisma.trackingRule.findMany({
-        where: {
-          AND: [
-            { lastPolledAt: { not: null } },
-            { lastPolledAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }, // 最近24小时内有轮询
-            { isActive: false } // 但当前未标记为活跃
-          ]
-        },
-        include: { timeSlots: true }
-      });
+    // 2. 获取最近有活动但可能未标记为活跃的规则
+    const recentActiveRules = await prisma.trackingRule.findMany({
+      where: {
+        AND: [
+          { lastPolledAt: { not: null } },
+          { lastPolledAt: { gt: new Date(Date.now() - 72 * 60 * 60 * 1000) } }, // 扩大到72小时内有轮询
+          { isActive: false } // 但当前未标记为活跃
+        ]
+      },
+      include: { timeSlots: true }
+    });
+    
+    // 3. 如果有最近活跃但未标记的规则，将它们标记为活跃并加入到恢复列表
+    let rulesToRestore = [...activeRules];
+    
+    if (recentActiveRules.length > 0) {
+      console.log(`[Boot] 发现 ${recentActiveRules.length} 个规则最近有轮询但未标记为活跃状态，将它们恢复`);
       
-      if (recentlyActiveRules.length > 0) {
-        console.log(`[Boot] 发现 ${recentlyActiveRules.length} 个规则最近有轮询但未标记为活跃状态，尝试恢复...`);
+      for (const rule of recentActiveRules) {
+        console.log(`[Boot] 恢复规则 ${rule.id} (${rule.name}) 的活跃状态`);
         
-        // 更新这些规则，将它们标记为活跃
-        for (const rule of recentlyActiveRules) {
-          console.log(`[Boot] 恢复规则 ${rule.id} (${rule.name}) 的活跃状态`);
-          await prisma.trackingRule.update({
-            where: { id: rule.id },
-            data: { isActive: true }
-          });
-          
-          // 将这些恢复的规则添加到要启动的规则列表中
-          rules.push(rule);
+        // 更新数据库中的状态为活跃
+        await prisma.trackingRule.update({
+          where: { id: rule.id },
+          data: { isActive: true }
+        });
+        
+        // 添加到恢复列表，避免重复
+        if (!rulesToRestore.some(r => r.id === rule.id)) {
+          rulesToRestore.push(rule);
         }
-        
-        console.log(`[Boot] 现在有 ${rules.length} 个规则需要启动`);
       }
-    } catch (error) {
-      console.error('[Boot] 检查规则实际状态失败:', error);
-      // 继续执行，不影响正常流程
     }
+    
+    // 4. 确保规则按照创建时间排序，优先启动较早创建的规则
+    rulesToRestore.sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    
+    // 5. 启动所有需要恢复的规则
+    console.log(`[Boot] 准备启动 ${rulesToRestore.length} 个活跃规则的追踪...`);
+    
+    if (rulesToRestore.length === 0) {
+      console.log('[Boot] 没有活跃规则需要启动');
+    } else {
+      // 批量启动追踪
+      for (let i = 0; i < rulesToRestore.length; i++) {
+        const rule = rulesToRestore[i];
+        try {
+          console.log(`[Boot] 启动规则追踪 (${i+1}/${rulesToRestore.length}): ${rule.id} (${rule.name})`);
+          
+          // 处理类型兼容性问题
+          const trackingRule = {
+            ...rule,
+            notificationPhone: rule.notificationPhone || undefined
+          };
+          
+          // 启动追踪
+          await trackingService.startTracking(trackingRule);
+          
+          // 如果有10个以上规则，每启动5个规则暂停一下，避免过快占用系统资源
+          if (rulesToRestore.length > 10 && (i + 1) % 5 === 0 && i < rulesToRestore.length - 1) {
+            console.log(`[Boot] 已启动${i + 1}个规则，暂停1秒后继续...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        } catch (error) {
+          console.error(`[Boot] 启动规则 ${rule.id} (${rule.name}) 追踪失败:`, error);
+        }
+      }
+    }
+    
+    // 输出最终活跃的定时器状态
+    const finalActiveTimers = trackingService['twitter'].getActiveRuleIds();
+    console.log(`[Boot] 初始化完成！当前活跃定时器 (${finalActiveTimers.length}个):`, finalActiveTimers);
+    
+    return;
+  } catch (error) {
+    console.error('[Boot] 初始化失败:', error);
+    throw error;
+  } finally {
+    isInitializing = false;
+  }
+}
+
+/**
+ * 清理所有现有定时器的辅助函数
+ */
+function cleanupAllTimers() {
+  try {
+    // 获取当前所有活跃的定时器
+    const activeTimers = trackingService['twitter'].getActiveRuleIds();
+    console.log(`[Boot] 清理前活跃定时器 (${activeTimers.length}个):`, activeTimers);
     
     // 优先使用更彻底的清理所有方法
     if (typeof trackingService['twitter'].clearAllPollingJobs === 'function') {
@@ -146,42 +208,8 @@ export async function initializeTracking(): Promise<void> {
     } else {
       console.log(`[Boot] 所有定时器已成功清理`);
     }
-    
-    // 只处理数据库中标记为活跃的规则
-    const ruleCount = rules.length;
-    if (ruleCount === 0) {
-      console.log('[Boot] 数据库中没有活跃的规则，无需启动追踪');
-    } else {
-      console.log(`[Boot] 准备启动 ${ruleCount} 个规则的追踪...`);
-      
-      // 启动追踪
-      for (let i = 0; i < rules.length; i++) {
-        const rule = rules[i];
-        try {
-          console.log(`[Boot] 启动规则追踪 (${i+1}/${ruleCount}): ${rule.id} (${rule.name})`);
-          // 处理类型兼容性问题
-          const trackingRule = {
-            ...rule,
-            notificationPhone: rule.notificationPhone || undefined
-          };
-          await trackingService.startTracking(trackingRule);
-        } catch (error) {
-          console.error(`[Boot] 初始化规则追踪失败: ${rule.id} (${rule.name})`, error);
-        }
-      }
-      console.log('[Boot] 规则追踪服务初始化完成.');
-    }
-    
-    // 输出最终活跃的定时器状态
-    const finalActiveTimers = trackingService['twitter'].getActiveRuleIds();
-    console.log(`[Boot] 初始化后活跃定时器 (${finalActiveTimers.length}个):`, finalActiveTimers);
-    
-    return;
   } catch (error) {
-    console.error('[Boot] 初始化失败:', error);
-    throw error;
-  } finally {
-    isInitializing = false;
+    console.error('[Boot] 清理定时器失败:', error);
   }
 }
 
@@ -196,45 +224,54 @@ export function setupAutoInitialization() {
     clearTimeout(autoInitTimeoutId);
   }
   
-  console.log('[Boot] 已设置自动初始化，将在10秒后执行');
+  // 检查是否禁用自动初始化
+  const disableAutoInit = process.env.DISABLE_AUTO_INIT === 'true';
+  if (disableAutoInit) {
+    console.log('[Boot] 自动初始化已通过环境变量禁用');
+    return;
+  }
   
-  // 减少延迟为10秒，更快地恢复规则
+  console.log('[Boot] 已设置自动初始化，将在5秒后执行');
+  
+  // 减少延迟为5秒，更快地恢复规则
   autoInitTimeoutId = setTimeout(async () => {
     console.log('[Boot] 执行自动初始化...');
     try {
-      // 先使用标准初始化流程
+      // 使用标准初始化流程
       await initializeTracking();
       console.log('[Boot] 自动初始化成功完成');
       
-      // 额外调用恢复最近活跃规则的方法，确保所有规则都能被恢复
-      // 这可以捕获任何在initializeTracking中可能漏掉的规则
-      console.log('[Boot] 尝试恢复最近活跃的规则...');
-      const resumedCount = await trackingService.resumeRecentlyActiveRules(48); // 恢复48小时内的规则
-      if (resumedCount > 0) {
-        console.log(`[Boot] 额外恢复了 ${resumedCount} 个最近活跃的规则`);
-      } else {
-        console.log('[Boot] 没有额外需要恢复的规则');
-      }
-      
-      // 再次检查自动初始化状态
-      console.log('[Boot] 初始化完成，检查运行中的规则...');
+      // 再次检查运行中的规则
       const activeRuleIds = trackingService['twitter'].getActiveRuleIds();
-      console.log(`[Boot] 当前有 ${activeRuleIds.length} 个活跃规则: ${activeRuleIds.join(', ')}`);
+      console.log(`[Boot] 自动初始化完成，当前有 ${activeRuleIds.length} 个活跃规则`);
+      
+      // 添加一个额外的健康检查步骤
+      setTimeout(async () => {
+        const activeRuleIds = trackingService['twitter'].getActiveRuleIds();
+        if (activeRuleIds.length === 0) {
+          console.warn('[Boot] 警告: 启动后没有活跃规则，尝试再次恢复...');
+          // 再次尝试初始化
+          await initializeTracking();
+        } else {
+          console.log(`[Boot] 健康检查: 系统正常运行中，有 ${activeRuleIds.length} 个活跃规则`);
+        }
+      }, 60 * 1000); // 1分钟后检查
+      
     } catch (error) {
       console.error('[Boot] 自动初始化失败:', error);
       
       // 即使失败，也尝试一次恢复
       try {
-        console.log('[Boot] 尝试在初始化失败后直接恢复规则...');
+        console.log('[Boot] 尝试在初始化失败后使用备用方法恢复规则...');
         const resumedCount = await trackingService.resumeRecentlyActiveRules(72); // 扩大到72小时
         if (resumedCount > 0) {
-          console.log(`[Boot] 在初始化失败后直接恢复了 ${resumedCount} 个规则`);
+          console.log(`[Boot] 通过备用方法恢复了 ${resumedCount} 个规则`);
         }
       } catch (recoveryError) {
-        console.error('[Boot] 恢复规则也失败了:', recoveryError);
+        console.error('[Boot] 备用恢复方法也失败了:', recoveryError);
       }
     }
-  }, 10 * 1000);
+  }, 5 * 1000);
 }
 
 // 在模块加载时自动执行初始化设置
