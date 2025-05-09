@@ -150,7 +150,7 @@ export class TwitterService {
     } catch (error) {
       console.error(`[TwitterService] 获取用户 @${username} 信息失败:`, error);
       throw error;
-    }
+      }
   }
 
   // 获取用户最新推文
@@ -205,9 +205,9 @@ export class TwitterService {
 
       if (tweets.length === 0) {
         console.log(`[TwitterService] @${rule.twitterUsername} 没有新推文`);
-        return;
-      }
-
+      return;
+    }
+    
       // 处理所有获取到的推文
       console.log(`[TwitterService] 处理 ${tweets.length} 条新推文`);
       
@@ -215,10 +215,10 @@ export class TwitterService {
       const sortedTweets = tweets.sort((a, b) => 
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
-
+      
       // 使用临时变量保存最新的推文ID
       let latestTweetId = lastProcessedTweetId;
-
+        
       // 处理每条推文
       for (const tweet of sortedTweets) {
         console.log(`[TwitterService] 处理推文: ${tweet.id}`);
@@ -230,7 +230,7 @@ export class TwitterService {
           // 更新最新处理的推文ID
           if (!latestTweetId || tweet.id > latestTweetId) {
             latestTweetId = tweet.id;
-          }
+        }
         } catch (error) {
           console.error(`[TwitterService] 处理推文 ${tweet.id} 失败:`, error);
         }
@@ -244,17 +244,17 @@ export class TwitterService {
 
       if (freshRule && latestTweetId && latestTweetId !== lastProcessedTweetId) {
         console.log(`[TwitterService] 更新规则 ${rule.id} 的最后处理推文ID: ${latestTweetId}`);
-        
+          
         // 更新规则的最后处理推文ID
-        await prisma.trackingRule.update({
+            await prisma.trackingRule.update({
           where: { id: rule.id },
           data: { lastProcessedTweetId: latestTweetId }
-        });
+            });
       }
 
     } catch (error) {
       console.error(`[TwitterService] 检查推文时出错:`, error);
-    }
+          }
   }
 
   // 开始按规则轮询推文
@@ -262,26 +262,26 @@ export class TwitterService {
     try {
       // 验证规则
       console.log(`[TwitterService] 启动规则 ${rule.id} (${rule.name}) 的轮询，间隔: ${rule.pollingInterval}秒`);
-
+                    
       // 检查用户是否存在
       await this.fetchUserByUsername(rule.twitterUsername)
         .catch(error => {
           console.error(`[TwitterService] 无法获取用户 @${rule.twitterUsername} 信息:`, error);
           throw new Error(`Twitter用户 @${rule.twitterUsername} 不存在或无法访问`);
         });
-
+        
       // 先停止已存在的轮询
       this.stopPolling(rule.id);
-
+          
       // 检查规则存在性
-      const ruleExists = await prisma.trackingRule.findUnique({
+            const ruleExists = await prisma.trackingRule.findUnique({
         where: { id: rule.id },
-      });
-      
+            });
+            
       if (!ruleExists) {
         console.error(`[TwitterService] 规则 ${rule.id} 不存在，无法启动轮询`);
-        return;
-      }
+              return;
+            }
 
       // 立即开始第一次检查
       console.log(`[TwitterService] 开始首次检查: ${rule.id}`);
@@ -291,13 +291,13 @@ export class TwitterService {
       console.log(`[TwitterService] 设置 ${rule.pollingInterval}秒 轮询间隔: ${rule.id}`);
       const intervalId = setInterval(async () => {
         console.log(`[TwitterService] 执行定期轮询: ${rule.id}`);
-        
+            
         // 获取最新的规则数据
-        const freshRule = await prisma.trackingRule.findUnique({
+              const freshRule = await prisma.trackingRule.findUnique({
           where: { id: rule.id },
           include: { timeSlots: true }
-        });
-        
+              });
+              
         if (!freshRule) {
           console.log(`[TwitterService] 规则 ${rule.id} 已不存在，停止轮询`);
           this.stopPolling(rule.id);
@@ -315,7 +315,7 @@ export class TwitterService {
           ...freshRule,
           notificationPhone: freshRule.notificationPhone || undefined
         };
-        
+    
         // 执行检查
         await this.checkTweets(trackingRule, callback);
       }, rule.pollingInterval * 1000);
@@ -384,7 +384,7 @@ export class TwitterService {
     // 如果有时间槽配置
     if (rule.timeSlots && rule.timeSlots.length > 0) {
       console.log(`[TwitterService] 规则 ${rule.id} 有 ${rule.timeSlots.length} 个时间段配置`);
-      
+        
       // 检查当前时间是否在任何时间槽内
       const isInAnyTimeSlot = rule.timeSlots.some(slot => {
         return currentTimeString >= slot.startTime && currentTimeString <= slot.endTime;
@@ -407,7 +407,7 @@ export class TwitterService {
           };
           this.startPolling(trackingRule, callback);
         }
-      } else {
+        } else {
         console.log(`[TwitterService] 当前时间 ${currentTimeString} 不在规则 ${rule.id} 的任何时间段内，跳过启动`);
         
         // 计算下一个时间槽的开始时间，安排延迟启动
@@ -440,7 +440,7 @@ export class TwitterService {
                 notificationPhone: freshRule.notificationPhone || undefined
               };
               this.startPolling(trackingRule, callback);
-            }
+  }
           }, delayMs);
           
           this.pollingJobs.set(delayKey, delayId);
@@ -487,7 +487,7 @@ export class TwitterService {
       delayId: this.pollingJobs.get(`${ruleId}_delay`),
     };
   }
-
+  
   // 更新规则的最后轮询时间
   async updateLastPolledAt(ruleId: string): Promise<void> {
     try {

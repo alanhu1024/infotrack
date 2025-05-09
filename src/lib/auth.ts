@@ -3,6 +3,7 @@ import { compare } from "bcryptjs";
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
+import { getServerSession } from "next-auth";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -66,3 +67,26 @@ export const authOptions: NextAuthOptions = {
     }
   }
 }; 
+
+// 添加检查当前会话是否为管理员的函数
+export async function isAdminSession(): Promise<boolean> {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return false;
+    }
+    
+    // 获取用户信息
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true }
+    });
+    
+    // 检查是否为管理员角色
+    return user?.role === 'ADMIN';
+  } catch (error) {
+    console.error('[Auth] 检查管理员权限失败:', error);
+    return false;
+  }
+} 

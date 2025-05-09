@@ -143,15 +143,8 @@ export class TrackingService {
             explanation: analysis.explanation
           });
           
-          // 立即处理通知，不等待轮询结束
-          console.log(`[TrackingService] 立即处理匹配推文通知，不等待轮询结束`);
-          await this.handleMatchedTweets(rule, [{
-            id: tweet.id,
-            text: tweet.text,
-            authorId: tweet.authorId,
-            score: analysis.relevanceScore,
-            explanation: analysis.explanation
-          }]);
+          // 不再立即发送通知，而是等待轮询结束后统一处理
+          console.log(`[TrackingService] 推文已添加到匹配列表，将在轮询结束后统一发送通知`);
         } else {
           console.log(`[TrackingService] 推文相关性分数过低，未保存。`);
         }
@@ -182,9 +175,12 @@ export class TrackingService {
       return result;
     };
 
-    // 装饰Twitter服务的startPolling方法，在轮询完成后检查匹配数量并发送通知
+    // 修改Twitter服务的startPolling方法，增加标记确保能捕获一次完整轮询的结束
     const originalStartPolling = this.twitter.startPolling.bind(this.twitter);
     this.twitter.startPolling = async (rule, callback) => {
+      // 在轮询开始时重置匹配推文列表
+      matchedTweets.length = 0;
+      
       // 先重置通知状态，确保每次都能发送通知
       this.resetNotifiedTweets();
       
@@ -194,20 +190,30 @@ export class TrackingService {
         return result;
       };
 
-      // 调用原始startPolling方法
-      await originalStartPolling(rule, wrappedCallback);
+      // 标记轮询开始
+      console.log(`[TrackingService] 开始一次完整轮询: ${rule.id}`);
       
-      // 轮询完成后，如果有匹配推文，使用新方法处理通知
-      if (matchedTweets.length > 0) {
-        console.log(`[TrackingService] 本次轮询中匹配推文数量: ${matchedTweets.length}，使用handleMatchedTweets处理通知`);
+      try {
+        // 调用原始startPolling方法
+        await originalStartPolling(rule, wrappedCallback);
         
-        // 使用新方法处理通知，无需考虑是否已通知过
-        await this.handleMatchedTweets(rule, matchedTweets);
+        // 当原始startPolling方法执行完成，说明此次轮询已结束
+        console.log(`[TrackingService] 轮询结束: ${rule.id}, 匹配推文数量: ${matchedTweets.length}`);
         
-        // 清空匹配推文列表，为下次轮询准备
-        matchedTweets.length = 0;
-      } else {
-        console.log(`[TrackingService] 本次轮询中没有匹配推文，不发送通知`);
+        // 轮询完成后，如果有匹配推文，统一发送通知
+        if (matchedTweets.length > 0) {
+          console.log(`[TrackingService] 本次轮询中匹配推文数量: ${matchedTweets.length}，统一发送一次通知`);
+          
+          // 调用处理通知的方法
+          await this.handleMatchedTweets(rule, matchedTweets);
+          
+          // 清空匹配推文列表，为下次轮询准备
+          matchedTweets.length = 0;
+        } else {
+          console.log(`[TrackingService] 本次轮询中没有匹配推文，不发送通知`);
+        }
+      } catch (error) {
+        console.error(`[TrackingService] 轮询过程中发生错误:`, error);
       }
     };
 
