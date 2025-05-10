@@ -112,6 +112,8 @@ model Tweet {
   notifications Notification[]
   analysis      TweetAnalysis?
   rule          TrackingRule   @relation(fields: [matchedRuleId], references: [id], onDelete: Cascade)
+  notified      Boolean        @default(false)  // 是否已发送通知
+  notifiedAt    DateTime?      // 通知发送时间
 
   @@map("tweets")
 }

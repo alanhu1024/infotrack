@@ -41,6 +41,13 @@ export class TrackingService {
       throw new Error('TrackingService 已存在，请使用 trackingService 导出实例');
     }
     console.log('[TrackingService] 创建新实例 (单例)');
+    
+    // 异步加载已通知状态
+    setTimeout(() => {
+      this.loadNotifiedTweets().catch(e => {
+        console.error(`[TrackingService] 初始化加载已通知状态失败:`, e);
+      });
+    }, 1000); // 延迟1秒执行，确保Prisma初始化完成
   }
 
   // 添加访问已通知推文集合的getter
@@ -524,9 +531,113 @@ export class TrackingService {
     console.log('[TrackingService] 已重置已通知推文集合，下次检测到匹配推文将重新发送通知');
   }
 
-  // 处理检测到的推文并发送通知
+  // 在类定义内部添加通知重试方法
+  async sendNotificationWithRetry(service: any, params: any, maxRetries = 3): Promise<boolean> {
+    let lastError;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[TrackingService] 尝试发送通知 (第${attempt}次尝试)`);
+        await service.send(params);
+        console.log(`[TrackingService] 通知发送成功 (第${attempt}次尝试)`);
+        return true;
+      } catch (error) {
+        lastError = error;
+        console.error(`[TrackingService] 通知发送失败 (第${attempt}次尝试):`, error);
+        
+        // 输出更详细的错误信息
+        if (error instanceof Error) {
+          console.error(`[TrackingService] 错误详情: ${error.name}, ${error.message}`);
+          console.error(`[TrackingService] 错误堆栈: ${error.stack}`);
+        }
+        
+        // 最后一次尝试失败，不再等待
+        if (attempt < maxRetries) {
+          // 指数退避策略
+          const delayMs = 1000 * Math.pow(2, attempt - 1);
+          console.log(`[TrackingService] 等待 ${delayMs}ms 后重试...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    
+    // 所有尝试都失败
+    console.error(`[TrackingService] 通知发送失败，已尝试 ${maxRetries} 次`, lastError);
+    return false;
+  }
+  
+  // 添加持久化通知状态方法
+  async markTweetAsNotified(tweetId: string): Promise<void> {
+    try {
+      // 首先在内存中标记
+      this.notifiedTweets.add(tweetId);
+      
+      // 然后在数据库中标记
+      await this.prisma.tweet.updateMany({
+        where: { tweetId },
+        data: { 
+          notified: true, 
+          notifiedAt: new Date() 
+        }
+      });
+      
+      console.log(`[TrackingService] 已将推文 ${tweetId} 标记为已通知`);
+    } catch (error) {
+      console.error(`[TrackingService] 标记推文 ${tweetId} 为已通知失败:`, error);
+    }
+  }
+  
+  // 加载已通知推文状态方法
+  async loadNotifiedTweets(): Promise<void> {
+    try {
+      console.log(`[TrackingService] 从数据库加载已通知的推文状态`);
+      
+      // 检查数据库中是否有notified字段
+      const hasNotifiedField = await this.checkTweetModelHasNotifiedField();
+      
+      if (hasNotifiedField) {
+        const notifiedTweets = await this.prisma.tweet.findMany({
+          where: { notified: true },
+          select: { tweetId: true }
+        });
+        
+        // 清空当前集合
+        this.notifiedTweets.clear();
+        
+        // 加载已通知推文
+        notifiedTweets.forEach((tweet: {tweetId: string}) => {
+          this.notifiedTweets.add(tweet.tweetId);
+        });
+        
+        console.log(`[TrackingService] 已加载 ${notifiedTweets.length} 条已通知推文状态`);
+      } else {
+        console.log(`[TrackingService] 数据库没有notified字段，跳过加载`);
+      }
+    } catch (error) {
+      console.error(`[TrackingService] 加载已通知推文状态失败:`, error);
+    }
+  }
+  
+  // 检查Tweet模型是否有notified字段
+  private async checkTweetModelHasNotifiedField(): Promise<boolean> {
+    try {
+      // 尝试查询带有notified字段的推文
+      await this.prisma.$queryRaw`SELECT "notified" FROM "tweets" LIMIT 1`;
+      return true;
+    } catch (error) {
+      // 如果出错，可能是字段不存在
+      console.log(`[TrackingService] Tweet模型可能没有notified字段，后续需要迁移添加`);
+      return false;
+    }
+  }
+
+  // 修改handleMatchedTweets方法，增强诊断和通知成功率
   async handleMatchedTweets(rule: TrackingRule, tweets: any[]): Promise<void> {
     try {
+      // 诊断日志
+      console.log(`[诊断] 开始处理匹配推文，推文总数: ${tweets.length}`);
+      console.log(`[诊断] 通知集合状态: 当前大小=${this.notifiedTweets.size}`);
+      console.log(`[诊断] 通知服务列表:`, Array.from(notificationServices.keys()));
+      
       if (tweets.length === 0) {
         console.log('[TrackingService] 没有匹配的推文，不发送通知');
         return;
@@ -535,7 +646,7 @@ export class TrackingService {
       console.log(`[TrackingService] 处理 ${tweets.length} 条匹配的推文，准备发送通知`);
       console.log(`[TrackingService] 匹配推文详情:`, JSON.stringify(tweets.map(t => ({
         id: t.id,
-        text: t.text,
+        text: t.text.substring(0, 50) + (t.text.length > 50 ? '...' : ''),
         score: t.score
       })), null, 2));
       
@@ -556,6 +667,16 @@ export class TrackingService {
       // 如果设置了通知手机号码，使用百度智能外呼
       if (ruleDetails?.notificationPhone) {
         try {
+          // 验证手机号格式
+          console.log(`[诊断] 规则配置的通知手机号: ${ruleDetails.notificationPhone}`);
+          const phoneRegex = /^1[3-9]\d{9}$/;
+          if (!phoneRegex.test(ruleDetails.notificationPhone)) {
+            console.error(`[诊断] 手机号格式不正确: ${ruleDetails.notificationPhone}`);
+            return;
+          } else {
+            console.log(`[诊断] 手机号格式正确`);
+          }
+          
           // 检查这些推文是否已经通知过
           const alreadyNotified = tweets.filter(t => this.notifiedTweets.has(t.id));
           console.log(`[TrackingService] 推文通知状态检查: 总数=${tweets.length}, 已通知=${alreadyNotified.length}`);
@@ -574,8 +695,8 @@ export class TrackingService {
           
           console.log(`[TrackingService] 共有 ${tweets.length} 条匹配推文，其中 ${newTweets.length} 条是新推文需要通知`);
           
-          // 不再重置通知状态
-          console.log(`[TrackingService] 将通过百度智能外呼通知用户: ${ruleDetails.notificationPhone}`);
+          // 获取百度智能外呼服务
+          console.log(`[TrackingService] 尝试获取百度智能外呼服务`);
           const baiduCallingService = notificationServices.get('baidu-calling');
           
           if (baiduCallingService) {
@@ -590,11 +711,13 @@ export class TrackingService {
             console.log(`[TrackingService] 选择得分最高的推文作为通知内容:`, JSON.stringify({
               id: highestScoringTweet.id,
               score: highestScoringTweet.score,
-              text: highestScoringTweet.text
+              text: highestScoringTweet.text.substring(0, 50) + (highestScoringTweet.text.length > 50 ? '...' : '')
             }, null, 2));
             
-            try {
-              await baiduCallingService.send({
+            // 使用重试机制发送通知
+            const notificationSuccess = await this.sendNotificationWithRetry(
+              baiduCallingService,
+              {
                 userId: ruleDetails.notificationPhone,
                 channelId: 'phone',
                 title: `检测到${newTweets.length}条匹配规则"${ruleDetails.name}"的推文`,
@@ -608,31 +731,39 @@ export class TrackingService {
                   relevanceScore: highestScoringTweet.score,
                   analysisResult: highestScoringTweet.explanation
                 }
-              });
-              
-              console.log(`[TrackingService] 百度智能外呼通知已发送成功`);
-              
-              // 标记所有推文为已通知
-              newTweets.forEach(t => {
-                this.notifiedTweets.add(t.id);
-              });
-              
+              },
+              3 // 最多重试3次
+            );
+            
+            // 只有在通知成功后才标记为已通知
+            if (notificationSuccess) {
+              for (const tweet of newTweets) {
+                await this.markTweetAsNotified(tweet.id);
+              }
               console.log(`[TrackingService] 已成功发送百度智能外呼通知并记录 ${newTweets.length} 条推文为已通知状态`);
-            } catch (sendError) {
-              console.error(`[TrackingService] 百度智能外呼发送通知失败:`, sendError);
+            } else {
+              console.error(`[TrackingService] 所有通知尝试都失败，这些推文将在下次轮询时重试通知`);
             }
           } else {
-            console.warn(`[TrackingService] 百度智能外呼服务未配置或获取失败，跳过通知`);
+            console.error(`[TrackingService] 百度智能外呼服务未配置或获取失败，跳过通知`);
             console.log(`[TrackingService] 可用的通知服务:`, Array.from(notificationServices.keys()));
           }
         } catch (notifyError) {
           console.error(`[TrackingService] 发送百度智能外呼通知失败:`, notifyError);
+          if (notifyError instanceof Error) {
+            console.error(`[TrackingService] 错误详情: ${notifyError.name}, ${notifyError.message}`);
+            console.error(`[TrackingService] 错误堆栈: ${notifyError.stack}`);
+          }
         }
       } else {
         console.log(`[TrackingService] 规则未配置通知手机号码，跳过通知`);
       }
     } catch (error) {
       console.error(`[TrackingService] 处理通知出错:`, error);
+      if (error instanceof Error) {
+        console.error(`[TrackingService] 错误详情: ${error.name}, ${error.message}`);
+        console.error(`[TrackingService] 错误堆栈: ${error.stack}`);
+      }
     }
   }
 

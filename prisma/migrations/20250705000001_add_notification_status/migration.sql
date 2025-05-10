@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "tweets" ADD COLUMN IF NOT EXISTS "notified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "tweets" ADD COLUMN IF NOT EXISTS "notifiedAt" TIMESTAMP(3); 

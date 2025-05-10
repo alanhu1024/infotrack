@@ -41,6 +41,7 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
     notificationPhone: rule.notificationPhone || '',
   });
   const [isForceStoppingPolling, setIsForceStoppingPolling] = useState(false);
+  const [isResettingNotification, setIsResettingNotification] = useState(false);
 
   useEffect(() => {
     if (pendingActionRef.current && sessionChecked) {
@@ -295,6 +296,46 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
     executeForceStopPolling();
   };
 
+  const executeResetNotification = async () => {
+    if (isResettingNotification) return;
+    setIsResettingNotification(true);
+    
+    try {
+      console.log(`[规则操作] 发送重置通知状态请求: ${rule.id}`);
+      const response = await fetch(`/api/rules/${rule.id}/reset-notification`, {
+        method: 'POST'
+      });
+      
+      if (response.status === 401) {
+        console.log(`[规则操作] 重置通知操作未授权`);
+        toast.error('会话已过期，请刷新页面后重试');
+        setSessionChecked(false);
+        return;
+      }
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '重置通知状态失败');
+      }
+      
+      const result = await response.json();
+      console.log(`[规则操作] 已重置通知状态`, result);
+      toast.success(`已重置通知状态，${result.details.databaseUpdated}条记录已更新`);
+    } catch (error) {
+      console.error(`[规则操作] 重置通知状态出错:`, error);
+      toast.error(error instanceof Error ? error.message : '重置通知状态失败');
+    } finally {
+      setIsResettingNotification(false);
+    }
+  };
+  
+  const handleResetNotification = () => {
+    if (!confirm('确定要重置通知状态吗？这将允许系统重新发送已匹配但未成功通知的推文通知。')) {
+      return;
+    }
+    executeResetNotification();
+  };
+
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-lg shadow">
@@ -458,6 +499,15 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
                 {isForceStoppingPolling ? '处理中...' : '强制停止轮询'}
               </button>
             )}
+            
+            <button
+              type="button"
+              onClick={handleResetNotification}
+              disabled={isResettingNotification}
+              className="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {isResettingNotification ? '处理中...' : '重置通知状态'}
+            </button>
             
             <button
               type="button"
