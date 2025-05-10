@@ -40,6 +40,7 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
     timeSlots: rule.timeSlots || [],
     notificationPhone: rule.notificationPhone || '',
   });
+  const [isForceStoppingPolling, setIsForceStoppingPolling] = useState(false);
 
   useEffect(() => {
     if (pendingActionRef.current && sessionChecked) {
@@ -253,6 +254,47 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
     }));
   };
 
+  const executeForceStopPolling = async () => {
+    if (isForceStoppingPolling) return;
+    setIsForceStoppingPolling(true);
+    
+    try {
+      console.log(`[规则操作] 发送强制停止轮询请求: ${rule.id}`);
+      const response = await fetch(`/api/rules/${rule.id}/force-stop`, {
+        method: 'POST'
+      });
+      
+      if (response.status === 401) {
+        console.log(`[规则操作] 强制停止操作未授权，标记为挂起`);
+        toast.error('会话已过期，请刷新页面后重试');
+        setSessionChecked(false);
+        return;
+      }
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '强制停止轮询失败');
+      }
+      
+      setFormData(prev => ({ ...prev, isActive: false }));
+      console.log(`[规则操作] 已强制停止轮询`);
+      toast.success('已强制停止轮询');
+      router.refresh();
+    } catch (error) {
+      console.error(`[规则操作] 强制停止出错:`, error);
+      toast.error(error instanceof Error ? error.message : '强制停止轮询失败');
+    } finally {
+      setIsForceStoppingPolling(false);
+    }
+  };
+  
+  const handleForceStopPolling = () => {
+    if (!confirm('确定要强制停止轮询吗？这将清理所有相关的定时器和队列。')) {
+      return;
+    }
+    executeForceStopPolling();
+  };
+
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-lg shadow">
@@ -405,6 +447,18 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
                 ? (sessionChecked ? '处理中...' : '准备中...') 
                 : (formData.isActive ? '停用规则' : '启用规则')}
             </button>
+            
+            {formData.isActive && (
+              <button
+                type="button"
+                onClick={handleForceStopPolling}
+                disabled={isForceStoppingPolling}
+                className="px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50"
+              >
+                {isForceStoppingPolling ? '处理中...' : '强制停止轮询'}
+              </button>
+            )}
+            
             <button
               type="button"
               onClick={() => setShowDeleteConfirm(true)}

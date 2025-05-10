@@ -205,9 +205,9 @@ export class TrackingService {
     if (!isActive) {
       console.log(`[TrackingService] 规则 ${ruleId} 没有活跃定时器，无需停止。`);
     } else {
-      // 确保停止所有定时器
-      this.twitter.stopPolling(ruleId);
-      console.log(`[TrackingService] 已停止规则 ${ruleId} 的追踪`);
+      // 确保停止所有定时器 - 使用强制清理方法
+      this.twitter.forceCleanupPolling(ruleId);
+      console.log(`[TrackingService] 已强制停止规则 ${ruleId} 的追踪`);
     }
     
     // 获取数据库中的规则信息
@@ -226,6 +226,16 @@ export class TrackingService {
       }
     } catch (e) {
       console.error(`[TrackingService] 获取或更新规则状态失败:`, e);
+    }
+    
+    // 最后检查确保已停止
+    const stillActive = this.twitter.isPolling(ruleId);
+    if (stillActive) {
+      console.error(`[TrackingService] 警告: 规则 ${ruleId} 的轮询仍未完全停止，尝试再次清理`);
+      // 再次尝试强制清理
+      this.twitter.forceCleanupPolling(ruleId);
+    } else {
+      console.log(`[TrackingService] 确认: 规则 ${ruleId} 的轮询已完全停止`);
     }
   }
 
@@ -624,6 +634,11 @@ export class TrackingService {
     } catch (error) {
       console.error(`[TrackingService] 处理通知出错:`, error);
     }
+  }
+
+  // 获取TwitterService实例
+  public getTwitterService() {
+    return this.twitter;
   }
 }
 

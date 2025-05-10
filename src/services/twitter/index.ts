@@ -88,7 +88,8 @@ export class TwitterService {
   private pollingQueue: Map<string, PollingQueueItem>;
 
   constructor() {
-    this.pollingJobs = new Map();
+    // 使用全局对象的pollingJobs，确保在所有请求中共享
+    this.pollingJobs = global.__twitterPollingJobs as Map<string, NodeJS.Timeout>;
     // 初始化轮询队列
     this.pollingQueue = new Map();
     console.log('[TwitterService] 初始化');
@@ -139,6 +140,75 @@ export class TwitterService {
       console.log(`[TwitterService] 清理定时器: ${key}`);
     }
     this.pollingJobs.clear();
+  }
+
+  // 强制清理所有轮询定时器，包括特定规则和全局定时器
+  public forceCleanupPolling(ruleId?: string): void {
+    if (ruleId) {
+      console.log(`[TwitterService] 强制清理规则 ${ruleId} 的所有定时器`);
+      // 先尝试正常停止
+      this.stopPolling(ruleId);
+      
+      // 额外清理可能的遗留引用
+      const keyPatterns = [
+        ruleId,                  // 主定时器
+        `${ruleId}_delay`,       // 延迟定时器
+        `${ruleId}_checking`,    // 检查中标志
+        `${ruleId}_processing`   // 处理中标志
+      ];
+      
+      // 检查所有可能的键模式
+      for (const pattern of keyPatterns) {
+        // 清理全局Map
+        const globalPollingJobs = global.__twitterPollingJobs as Map<string, NodeJS.Timeout>;
+        for (const [key, timer] of globalPollingJobs.entries()) {
+          if (key.includes(pattern)) {
+            if (key.includes('_delay')) {
+              clearTimeout(timer);
+            } else {
+              clearInterval(timer);
+            }
+            globalPollingJobs.delete(key);
+            console.log(`[TwitterService] 强制清理全局定时器: ${key}`);
+          }
+        }
+        
+        // 清理实例Map
+        for (const [key, timer] of this.pollingJobs.entries()) {
+          if (key.includes(pattern)) {
+            if (key.includes('_delay')) {
+              clearTimeout(timer);
+            } else {
+              clearInterval(timer);
+            }
+            this.pollingJobs.delete(key);
+            console.log(`[TwitterService] 强制清理实例定时器: ${key}`);
+          }
+        }
+      }
+      
+      // 清理轮询队列
+      this.pollingQueue.delete(ruleId);
+      console.log(`[TwitterService] 强制清理规则 ${ruleId} 的轮询队列`);
+    } else {
+      // 清理所有定时器
+      console.log(`[TwitterService] 强制清理所有定时器`);
+      this.clearAllPollingJobs();
+      
+      // 清理所有轮询队列
+      this.pollingQueue.clear();
+      console.log(`[TwitterService] 强制清理所有轮询队列`);
+    }
+    
+    // 尝试强制垃圾回收
+    try {
+      if (global.gc) {
+        global.gc();
+        console.log('[TwitterService] 已执行强制垃圾回收');
+      }
+    } catch (e) {
+      console.log(`[TwitterService] 无法执行强制垃圾回收: ${e}`);
+    }
   }
 
   // 初始化Twitter API
@@ -435,21 +505,40 @@ export class TwitterService {
   stopPolling(ruleId: string): void {
     console.log(`[TwitterService] 停止规则 ${ruleId} 的轮询`);
 
-    // 清理定时器
+    // 使用全局定时器Map和实例定时器Map
+    const globalPollingJobs = global.__twitterPollingJobs as Map<string, NodeJS.Timeout>;
+    
+    // 从实例Map中清理定时器
     const intervalId = this.pollingJobs.get(ruleId);
     if (intervalId) {
       clearInterval(intervalId);
       this.pollingJobs.delete(ruleId);
-      console.log(`[TwitterService] 已移除轮询作业: ${ruleId}`);
+      console.log(`[TwitterService] 已移除实例轮询作业: ${ruleId}`);
+    }
+    
+    // 从全局Map中清理定时器
+    const globalIntervalId = globalPollingJobs.get(ruleId);
+    if (globalIntervalId) {
+      clearInterval(globalIntervalId);
+      globalPollingJobs.delete(ruleId);
+      console.log(`[TwitterService] 已移除全局轮询作业: ${ruleId}`);
     }
 
-    // 清理延迟任务
+    // 清理实例延迟任务
     const delayKey = `${ruleId}_delay`;
     const delayId = this.pollingJobs.get(delayKey);
     if (delayId) {
       clearTimeout(delayId);
       this.pollingJobs.delete(delayKey);
-      console.log(`[TwitterService] 已移除延迟任务: ${delayKey}`);
+      console.log(`[TwitterService] 已移除实例延迟任务: ${delayKey}`);
+    }
+    
+    // 清理全局延迟任务
+    const globalDelayId = globalPollingJobs.get(delayKey);
+    if (globalDelayId) {
+      clearTimeout(globalDelayId);
+      globalPollingJobs.delete(delayKey);
+      console.log(`[TwitterService] 已移除全局延迟任务: ${delayKey}`);
     }
 
     // 清理轮询队列
@@ -457,6 +546,20 @@ export class TwitterService {
       this.pollingQueue.delete(ruleId);
       console.log(`[TwitterService] 已移除轮询队列: ${ruleId}`);
     }
+    
+    // 防止Node.js事件循环中仍有引用导致的内存泄漏
+    try {
+      // 强制进行垃圾回收，释放定时器资源
+      if (global.gc) {
+        global.gc();
+        console.log(`[TwitterService] 已强制执行垃圾回收`);
+      }
+    } catch (e) {
+      console.log(`[TwitterService] 无法执行垃圾回收: ${e}`);
+    }
+    
+    // 确认定时器已经被清理
+    console.log(`[TwitterService] 停止后检查定时器状态 - 实例: ${this.pollingJobs.has(ruleId) ? '仍存在' : '已清理'}, 全局: ${globalPollingJobs.has(ruleId) ? '仍存在' : '已清理'}`);
   }
 
   // 重启轮询
