@@ -90,7 +90,7 @@ export async function importAllPhonesIntoWhitelist(): Promise<{
     // 批量导入手机号码到白名单
     const importResult = await (baiduCallingService as BaiduCallingService).ensurePhoneInWhitelist(uniquePhones);
     
-    console.log(`[ImportPhoneWhitelist] 导入结果:`, importResult);
+    // console.log(`[ImportPhoneWhitelist] 导入结果:`, importResult);
     
     return {
       success: importResult.success,

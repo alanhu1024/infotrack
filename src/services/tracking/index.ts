@@ -1,4 +1,4 @@
-import { TwitterService, twitterServiceSingleton } from '../twitter';
+import { TwitterService, twitterServiceSingleton, toBeiJingTime } from '@/services/twitter';
 import { AIService } from '../ai';
 import { PrismaClient } from '@prisma/client';
 import type { Tweet, TrackingRule, NotificationChannel } from '@/types';
@@ -73,8 +73,20 @@ export class TrackingService {
     console.log(`[TrackingService] startTracking 参数:`, JSON.stringify(rule, null, 2));
     console.log('[TrackingService] 当前所有定时器key:', Array.from(this.twitter['pollingJobs'].keys()));
     if (!rule.isActive) {
-      console.log(`[TrackingService] 规则 ${rule.id} 未启用，跳过追踪。`);
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则 ${rule.id} 未启用，跳过追踪。`);
       return;
+    }
+
+    // 先检查是否应该轮询
+    if (!this.twitter.shouldPollNow(rule.id, rule.pollingInterval)) {
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则 ${rule.id} 未达到轮询周期，跳过启动轮询`);
+      
+      // 如果轮询已经存在，使用现有轮询
+      if (this.twitter.isPolling(rule.id)) {
+        console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则 ${rule.id} 已有活跃轮询，无需重启`);
+        return;
+      }
+      // 否则，检查是否需要启动轮询（如果没有活跃轮询）
     }
 
     console.log(`[TrackingService] 启动规则追踪: ${rule.id} (${rule.name})`);
@@ -251,6 +263,12 @@ export class TrackingService {
     // 确保先彻底清理定时器
     this.twitter.stopPolling(rule.id);
     
+    // 检查是否应该进行轮询
+    if (!this.twitter.shouldPollNow(rule.id, rule.pollingInterval)) {
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则 ${rule.id} 未达到轮询周期，但仍设置定时器`);
+      // 继续设置定时器，但内部不会立即轮询，除非是重启后第一次
+    }
+    
     if (rule.isActive) {
       await this.startTracking(rule);
     }
@@ -258,7 +276,7 @@ export class TrackingService {
 
   private async shouldPollRule(rule: TrackingRule): Promise<boolean> {
     if (!rule.isActive || !rule.pollingEnabled) {
-      console.log(`[TrackingService] 规则 ${rule.id} 未启用或未开启轮询，跳过。`);
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则 ${rule.id} 未启用或未开启轮询，跳过。`);
       return false;
     }
 
@@ -439,29 +457,37 @@ export class TrackingService {
     });
   }
   
-  // 恢复最近活跃的规则追踪
-  async resumeRecentlyActiveRules(hourThreshold: number = 24): Promise<number> {
-    console.log(`[TrackingService] 尝试恢复最近 ${hourThreshold} 小时内活跃的规则...`);
+  // 修改resumeRecentlyActiveRules方法
+  async resumeRecentlyActiveRules(hourThreshold: number = 24, onlyExplicitActive: boolean = true): Promise<number> {
+    console.log(`[TrackingService] 尝试恢复最近 ${hourThreshold} 小时内${onlyExplicitActive ? '且被标记为活跃' : ''}的规则...`);
     try {
-      // 获取所有最近有轮询记录的规则
-      const recentlyActiveRules = await this.prisma.trackingRule.findMany({
-        where: {
-          AND: [
-            { lastPolledAt: { not: null } },
-            { lastPolledAt: { gt: new Date(Date.now() - hourThreshold * 60 * 60 * 1000) } } // 最近指定小时内有轮询
-          ]
-        },
+      // 构建查询条件
+      const whereCondition: any = {
+        AND: [
+          { lastPolledAt: { not: null } },
+          { lastPolledAt: { gt: new Date(Date.now() - hourThreshold * 60 * 60 * 1000) } } // 最近指定小时内有轮询
+        ]
+      };
+      
+      // 如果只恢复明确标记为活跃的规则
+      if (onlyExplicitActive) {
+        whereCondition.AND.push({ isActive: true });
+      }
+      
+      // 获取符合条件的规则
+      const rulesToResume = await this.prisma.trackingRule.findMany({
+        where: whereCondition,
         include: { timeSlots: true }
       });
       
-      console.log(`[TrackingService] 发现 ${recentlyActiveRules.length} 个最近活跃的规则`);
+      console.log(`[TrackingService] 发现 ${rulesToResume.length} 个符合条件的规则`);
       let resumedCount = 0;
       
       // 对每个规则进行处理
-      for (const rule of recentlyActiveRules) {
-        // 如果规则当前未被标记为活跃，更新其状态
-        if (!rule.isActive) {
-          console.log(`[TrackingService] 恢复规则 ${rule.id} (${rule.name}) 的活跃状态`);
+      for (const rule of rulesToResume) {
+        // 如果规则当前未被标记为活跃且需要强制标记
+        if (!rule.isActive && !onlyExplicitActive) {
+          console.log(`[TrackingService] 将规则 ${rule.id} (${rule.name}) 标记为活跃`);
           await this.prisma.trackingRule.update({
             where: { id: rule.id },
             data: { isActive: true }
@@ -479,8 +505,13 @@ export class TrackingService {
             ...rule,
             notificationPhone: rule.notificationPhone || undefined
           };
-          await this.startTracking(trackingRule);
-          resumedCount++;
+          
+          try {
+            await this.startTracking(trackingRule);
+            resumedCount++;
+          } catch (error) {
+            console.error(`[TrackingService] 恢复规则 ${rule.id} 时出错:`, error);
+          }
         } else {
           console.log(`[TrackingService] 规则 ${rule.id} (${rule.name}) 已在轮询中，无需恢复`);
         }
@@ -565,53 +596,37 @@ export class TrackingService {
     return false;
   }
   
-  // 添加持久化通知状态方法
-  async markTweetAsNotified(tweetId: string): Promise<void> {
-    try {
-      // 首先在内存中标记
-      this.notifiedTweets.add(tweetId);
-      
-      // 然后在数据库中标记
-      await this.prisma.tweet.updateMany({
-        where: { tweetId },
-        data: { 
-          notified: true, 
-          notifiedAt: new Date() 
-        }
-      });
-      
-      console.log(`[TrackingService] 已将推文 ${tweetId} 标记为已通知`);
-    } catch (error) {
-      console.error(`[TrackingService] 标记推文 ${tweetId} 为已通知失败:`, error);
-    }
-  }
-  
-  // 加载已通知推文状态方法
+  // 改进loadNotifiedTweets方法，只加载真正已通知的推文
   async loadNotifiedTweets(): Promise<void> {
     try {
       console.log(`[TrackingService] 从数据库加载已通知的推文状态`);
       
-      // 检查数据库中是否有notified字段
-      const hasNotifiedField = await this.checkTweetModelHasNotifiedField();
+      // 获取标记为已通知的推文
+      const notifiedTweets = await this.prisma.tweet.findMany({
+        where: {
+          // 只查询最近7天内的推文
+          createdAt: {
+            gt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+          },
+          // 显式查询通知字段为true的记录
+          notified: {
+            equals: true
+          }
+        },
+        select: { 
+          tweetId: true 
+        }
+      });
       
-      if (hasNotifiedField) {
-        const notifiedTweets = await this.prisma.tweet.findMany({
-          where: { notified: true },
-          select: { tweetId: true }
-        });
-        
-        // 清空当前集合
-        this.notifiedTweets.clear();
-        
-        // 加载已通知推文
-        notifiedTweets.forEach((tweet: {tweetId: string}) => {
-          this.notifiedTweets.add(tweet.tweetId);
-        });
-        
-        console.log(`[TrackingService] 已加载 ${notifiedTweets.length} 条已通知推文状态`);
-      } else {
-        console.log(`[TrackingService] 数据库没有notified字段，跳过加载`);
-      }
+      // 清空当前集合
+      this.notifiedTweets.clear();
+      
+      // 加载已通知的推文ID
+      notifiedTweets.forEach((tweet: {tweetId: string}) => {
+        this.notifiedTweets.add(tweet.tweetId);
+      });
+      
+      console.log(`[TrackingService] 已加载 ${notifiedTweets.length} 条推文ID到已通知状态`);
     } catch (error) {
       console.error(`[TrackingService] 加载已通知推文状态失败:`, error);
     }
@@ -634,17 +649,17 @@ export class TrackingService {
   async handleMatchedTweets(rule: TrackingRule, tweets: any[]): Promise<void> {
     try {
       // 诊断日志
-      console.log(`[诊断] 开始处理匹配推文，推文总数: ${tweets.length}`);
-      console.log(`[诊断] 通知集合状态: 当前大小=${this.notifiedTweets.size}`);
-      console.log(`[诊断] 通知服务列表:`, Array.from(notificationServices.keys()));
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 开始处理匹配推文，推文总数: ${tweets.length}`);
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 通知集合状态: 当前大小=${this.notifiedTweets.size}`);
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 通知服务列表:`, Array.from(notificationServices.keys()));
       
       if (tweets.length === 0) {
         console.log('[TrackingService] 没有匹配的推文，不发送通知');
         return;
       }
 
-      console.log(`[TrackingService] 处理 ${tweets.length} 条匹配的推文，准备发送通知`);
-      console.log(`[TrackingService] 匹配推文详情:`, JSON.stringify(tweets.map(t => ({
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 处理 ${tweets.length} 条匹配的推文，准备发送通知`);
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 匹配推文详情:`, JSON.stringify(tweets.map(t => ({
         id: t.id,
         text: t.text.substring(0, 50) + (t.text.length > 50 ? '...' : ''),
         score: t.score
@@ -658,7 +673,7 @@ export class TrackingService {
         }
       });
       
-      console.log(`[TrackingService] 规则详情:`, JSON.stringify({
+      console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则详情:`, JSON.stringify({
         id: ruleDetails?.id,
         name: ruleDetails?.name,
         notificationPhone: ruleDetails?.notificationPhone
@@ -668,39 +683,39 @@ export class TrackingService {
       if (ruleDetails?.notificationPhone) {
         try {
           // 验证手机号格式
-          console.log(`[诊断] 规则配置的通知手机号: ${ruleDetails.notificationPhone}`);
+          console.log(`[TrackingService ${toBeiJingTime(new Date())}] 规则配置的通知手机号: ${ruleDetails.notificationPhone}`);
           const phoneRegex = /^1[3-9]\d{9}$/;
           if (!phoneRegex.test(ruleDetails.notificationPhone)) {
-            console.error(`[诊断] 手机号格式不正确: ${ruleDetails.notificationPhone}`);
+            console.error(`[TrackingService ${toBeiJingTime(new Date())}] 手机号格式不正确: ${ruleDetails.notificationPhone}`);
             return;
           } else {
-            console.log(`[诊断] 手机号格式正确`);
+            console.log(`[TrackingService ${toBeiJingTime(new Date())}] 手机号格式正确`);
           }
           
           // 检查这些推文是否已经通知过
           const alreadyNotified = tweets.filter(t => this.notifiedTweets.has(t.id));
-          console.log(`[TrackingService] 推文通知状态检查: 总数=${tweets.length}, 已通知=${alreadyNotified.length}`);
+          console.log(`[TrackingService ${toBeiJingTime(new Date())}] 推文通知状态检查: 总数=${tweets.length}, 已通知=${alreadyNotified.length}`);
           
           if (alreadyNotified.length === tweets.length) {
-            console.log(`[TrackingService] 所有 ${tweets.length} 条推文都已经通知过，跳过本次通知`);
+            console.log(`[TrackingService ${toBeiJingTime(new Date())}] 所有 ${tweets.length} 条推文都已经通知过，跳过本次通知`);
             return;
           }
           
           // 只保留未通知过的推文
           const newTweets = tweets.filter(t => !this.notifiedTweets.has(t.id));
           if (newTweets.length === 0) {
-            console.log(`[TrackingService] 过滤后没有新的未通知推文，跳过本次通知`);
+            console.log(`[TrackingService ${toBeiJingTime(new Date())}] 过滤后没有新的未通知推文，跳过本次通知`);
             return;
           }
           
-          console.log(`[TrackingService] 共有 ${tweets.length} 条匹配推文，其中 ${newTweets.length} 条是新推文需要通知`);
+          console.log(`[TrackingService ${toBeiJingTime(new Date())}] 共有 ${tweets.length} 条匹配推文，其中 ${newTweets.length} 条是新推文需要通知`);
           
           // 获取百度智能外呼服务
-          console.log(`[TrackingService] 尝试获取百度智能外呼服务`);
+          console.log(`[TrackingService ${toBeiJingTime(new Date())}] 尝试获取百度智能外呼服务`);
           const baiduCallingService = notificationServices.get('baidu-calling');
           
           if (baiduCallingService) {
-            console.log(`[TrackingService] 已获取百度智能外呼服务实例，准备发送通知`);
+            console.log(`[TrackingService ${toBeiJingTime(new Date())}] 已获取百度智能外呼服务实例，准备发送通知`);
             
             // 选择得分最高的推文作为通知内容
             const highestScoringTweet = newTweets.reduce(
@@ -708,7 +723,7 @@ export class TrackingService {
               newTweets[0]
             );
             
-            console.log(`[TrackingService] 选择得分最高的推文作为通知内容:`, JSON.stringify({
+            console.log(`[TrackingService ${toBeiJingTime(new Date())}] 选择得分最高的推文作为通知内容:`, JSON.stringify({
               id: highestScoringTweet.id,
               score: highestScoringTweet.score,
               text: highestScoringTweet.text.substring(0, 50) + (highestScoringTweet.text.length > 50 ? '...' : '')
@@ -740,30 +755,115 @@ export class TrackingService {
               for (const tweet of newTweets) {
                 await this.markTweetAsNotified(tweet.id);
               }
-              console.log(`[TrackingService] 已成功发送百度智能外呼通知并记录 ${newTweets.length} 条推文为已通知状态`);
+              console.log(`[TrackingService ${toBeiJingTime(new Date())}] 已成功发送百度智能外呼通知并记录 ${newTweets.length} 条推文为已通知状态`);
             } else {
-              console.error(`[TrackingService] 所有通知尝试都失败，这些推文将在下次轮询时重试通知`);
+              console.error(`[TrackingService ${toBeiJingTime(new Date())}] 所有通知尝试都失败，这些推文将在下次轮询时重试通知`);
             }
           } else {
-            console.error(`[TrackingService] 百度智能外呼服务未配置或获取失败，跳过通知`);
-            console.log(`[TrackingService] 可用的通知服务:`, Array.from(notificationServices.keys()));
+            console.error(`[TrackingService ${toBeiJingTime(new Date())}] 百度智能外呼服务未配置或获取失败，跳过通知`);
+            console.log(`[TrackingService ${toBeiJingTime(new Date())}] 可用的通知服务:`, Array.from(notificationServices.keys()));
           }
-        } catch (notifyError) {
-          console.error(`[TrackingService] 发送百度智能外呼通知失败:`, notifyError);
-          if (notifyError instanceof Error) {
-            console.error(`[TrackingService] 错误详情: ${notifyError.name}, ${notifyError.message}`);
-            console.error(`[TrackingService] 错误堆栈: ${notifyError.stack}`);
-          }
+        } catch (error) {
+          console.error(`[TrackingService ${toBeiJingTime(new Date())}] 发送通知时出错:`, error);
         }
       } else {
         console.log(`[TrackingService] 规则未配置通知手机号码，跳过通知`);
       }
     } catch (error) {
-      console.error(`[TrackingService] 处理通知出错:`, error);
-      if (error instanceof Error) {
-        console.error(`[TrackingService] 错误详情: ${error.name}, ${error.message}`);
-        console.error(`[TrackingService] 错误堆栈: ${error.stack}`);
+      console.error(`[TrackingService ${toBeiJingTime(new Date())}] 处理匹配推文时发生错误:`, error);
+    }
+  }
+
+  // 修改markTweetAsNotified方法，避免lint错误
+  async markTweetAsNotified(tweetId: string): Promise<void> {
+    try {
+      // 首先在内存中标记
+      this.notifiedTweets.add(tweetId);
+      
+      console.log(`[TrackingService] 将推文 ${tweetId} 标记为已通知`);
+      
+      // 同时更新数据库中的通知状态
+      const tweet = await this.prisma.tweet.findUnique({
+        where: { tweetId: tweetId }
+      });
+      
+      if (tweet) {
+        await this.prisma.tweet.update({
+          where: { id: tweet.id },
+          data: { 
+            notified: true,
+            notifiedAt: new Date()
+          }
+        });
+        console.log(`[TrackingService] 已更新数据库中推文 ${tweetId} 的通知状态`);
+      } else {
+        console.log(`[TrackingService] 推文 ${tweetId} 未在数据库中找到，仅在内存中标记`);
       }
+    } catch (error) {
+      console.error(`[TrackingService] 标记推文 ${tweetId} 为已通知失败:`, error);
+      
+      // 即使数据库更新失败，也保留内存中的标记
+      // 避免多次通知同一推文
+    }
+  }
+
+  // 添加清理所有规则的方法
+  async clearAllRules(): Promise<{ success: boolean, count: number }> {
+    console.log('[TrackingService] 开始清理所有规则...');
+    
+    try {
+      // 1. 首先获取所有规则ID
+      const allRules = await this.prisma.trackingRule.findMany({
+        select: { id: true, name: true, isActive: true }
+      });
+      
+      console.log(`[TrackingService] 找到 ${allRules.length} 个规则，准备清理`);
+      
+      // 2. 停止所有规则的轮询
+      for (const rule of allRules) {
+        if (rule.isActive) {
+          try {
+            await this.stopTracking(rule.id, rule.name);
+            console.log(`[TrackingService] 已停止规则 ${rule.id} (${rule.name}) 的轮询`);
+          } catch (error) {
+            console.error(`[TrackingService] 停止规则 ${rule.id} 失败:`, error);
+          }
+        }
+      }
+      
+      // 3. 使用Twitter服务强制清理所有轮询作业
+      this.twitter.clearAllPollingJobs();
+      
+      // 4. 将所有规则设为非活跃
+      const updateResult = await this.prisma.trackingRule.updateMany({
+        data: { 
+          isActive: false,
+          lastPolledAt: null
+        }
+      });
+      console.log(`[TrackingService] 已将 ${updateResult.count} 条规则设为非活跃`);
+      
+      // 5. 检查清理结果
+      const remainingActive = this.twitter.getActiveRuleIds();
+      if (remainingActive.length > 0) {
+        console.warn(`[TrackingService] 警告: 仍有 ${remainingActive.length} 个活跃轮询未清理:`);
+        console.warn(remainingActive);
+        // 最后的尝试：强制清理所有定时器
+        this.twitter.forceCleanupPolling();
+      } else {
+        console.log('[TrackingService] 所有规则轮询已成功清理');
+      }
+      
+      return {
+        success: true,
+        count: updateResult.count
+      };
+    } catch (error) {
+      console.error('[TrackingService] 清理所有规则失败:', error);
+      return {
+        success: false,
+        count: 0
+      };
     }
   }
 

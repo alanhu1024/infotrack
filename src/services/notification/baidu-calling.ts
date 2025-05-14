@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { NotificationService, NotificationPayload } from './types';
 import { env } from '@/config/env';
 import { PrismaClient } from '@prisma/client';
+import { toBeiJingTime } from '@/services/twitter';
 
 const prisma = new PrismaClient();
 
@@ -41,12 +42,12 @@ export class BaiduCallingService implements NotificationService {
     this.robotId = env.BAIDU_ROBOT_ID;
     this.callerNum = env.BAIDU_CALLER_NUMBER;
     
-    console.log('[BaiduCallingService] 已初始化百度智能外呼服务', {
-      accessKey: this.accessKey.substring(0, 5) + '...',
-      secretKey: this.secretKey.substring(0, 5) + '...',
-      robotId: this.robotId,
-      callerNum: this.callerNum
-    });
+    // console.log('[BaiduCallingService] 已初始化百度智能外呼服务', {
+    //   accessKey: this.accessKey.substring(0, 5) + '...',
+    //   secretKey: this.secretKey.substring(0, 5) + '...',
+    //   robotId: this.robotId,
+    //   callerNum: this.callerNum
+    // });
   }
 
   /**
@@ -79,8 +80,8 @@ export class BaiduCallingService implements NotificationService {
     }
 
     try {
-      console.log('[BaiduCallingService] 准备获取Token, 使用AccessKey:', this.accessKey.substring(0, 5) + '...');
-      console.log(`[BaiduCallingService] 使用${this.useBackupDomain ? '备用' : '主要'}域名: ${this.getTokenUrl()}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 准备获取Token, 使用AccessKey: ${this.accessKey.substring(0, 5) + '...'}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 使用${this.useBackupDomain ? '备用' : '主要'}域名: ${this.getTokenUrl()}`);
       
       // 使用百度智能外呼平台的API获取Token
       const response = await axios.post(
@@ -98,7 +99,7 @@ export class BaiduCallingService implements NotificationService {
         }
       );
       
-      console.log('[BaiduCallingService] Token响应:', JSON.stringify(response.data, null, 2));
+      // console.log('[BaiduCallingService] Token响应:', JSON.stringify(response.data, null, 2));
       
       // 检查响应格式并使用正确的字段名 'accessToken' 而不是 'token'
       if (!response.data.data || !response.data.data.accessToken) {
@@ -112,30 +113,30 @@ export class BaiduCallingService implements NotificationService {
       this.token = token;
       this.tokenExpiry = Date.now() + (expiresIn * 1000);
       
-      console.log('[BaiduCallingService] 成功获取Token，有效期:', expiresIn, '秒');
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 成功获取Token，有效期: ${expiresIn} 秒`);
       
       // 如果成功，重置为使用主域名
       this.useBackupDomain = false;
       
       return token;
     } catch (error: any) {
-      console.error('[BaiduCallingService] 获取百度Token失败');
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取百度Token失败`);
       
       // 增加详细错误日志
       if (error.response) {
-        console.error('[BaiduCallingService] 错误状态码:', error.response.status);
-        console.error('[BaiduCallingService] 错误详情:', JSON.stringify(error.response.data, null, 2));
-        console.error('[BaiduCallingService] 请求头:', JSON.stringify(error.config?.headers, null, 2));
-        console.error('[BaiduCallingService] 请求体:', JSON.stringify(error.config?.data, null, 2));
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${error.response.status}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(error.response.data, null, 2)}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求头: ${JSON.stringify(error.config?.headers, null, 2)}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求体: ${JSON.stringify(error.config?.data, null, 2)}`);
       } else if (error.request) {
-        console.error('[BaiduCallingService] 请求已发送但未收到响应');
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求已发送但未收到响应`);
       } else {
-        console.error('[BaiduCallingService] 请求配置错误:', error.message);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求配置错误: ${error.message}`);
       }
       
       // 检查是否是域名解析错误，如果是且未尝试备用域名，则尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名`);
         this.useBackupDomain = true;
         return this.getToken(); // 递归调用，使用备用域名重试
       }
@@ -151,14 +152,14 @@ export class BaiduCallingService implements NotificationService {
    */
   private async getCallerNumbers(): Promise<string[]> {
     try {
-      console.log('[BaiduCallingService] 正在获取可用主叫号码列表...');
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 正在获取可用主叫号码列表...`);
       
       // 获取token
       const token = await this.getToken();
       
       // 构建API地址
       const apiUrl = `${this.getApiBaseUrl().replace('/api/v3/console', '/api/v1/did/list')}`;
-      console.log(`[BaiduCallingService] 获取主叫号码API: ${apiUrl}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取主叫号码API: ${apiUrl}`);
       
       // 发送请求
       const response = await axios.get(
@@ -173,14 +174,14 @@ export class BaiduCallingService implements NotificationService {
       );
       
       // 记录响应状态
-      console.log('[BaiduCallingService] 主叫号码列表响应状态:', response.status);
-      console.log('[BaiduCallingService] 主叫号码列表响应数据结构:', JSON.stringify({
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主叫号码列表响应状态: ${response.status}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主叫号码列表响应数据结构: ${JSON.stringify({
         code: response.data.code,
         msg: response.data.msg,
         hasDataField: !!response.data.data,
         hasListField: !!response.data.data?.list,
         listLength: Array.isArray(response.data.data?.list) ? response.data.data.list.length : 'not an array'
-      }, null, 2));
+      }, null, 2)}`);
       
       // 检查响应是否正确 - 按照API实际返回结构（data.data.list）
       if (response.data.code !== 200 || !response.data.data || !response.data.data.list || !Array.isArray(response.data.data.list)) {
@@ -192,8 +193,7 @@ export class BaiduCallingService implements NotificationService {
       
       // 增加调试日志，打印几个示例号码对象
       if (phoneList.length > 0) {
-        console.log('[BaiduCallingService] 号码对象示例:', 
-          JSON.stringify(phoneList.slice(0, 2), null, 2));
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 号码对象示例: ${JSON.stringify(phoneList.slice(0, 2), null, 2)}`);
       }
       
       // 使用didAreaCode+didNumber组合成完整号码
@@ -207,29 +207,29 @@ export class BaiduCallingService implements NotificationService {
       }).filter(Boolean);
       
       if (numbers.length === 0) {
-        console.warn('[BaiduCallingService] 未获取到可用主叫号码，将使用配置的默认号码');
+        console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 未获取到可用主叫号码，将使用配置的默认号码`);
         return [this.callerNum]; // 使用配置的号码作为备选
       }
       
-      console.log(`[BaiduCallingService] 成功获取 ${numbers.length} 个可用主叫号码:`, numbers);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 成功获取 ${numbers.length} 个可用主叫号码: ${numbers}`);
       return numbers;
     } catch (error: any) {
-      console.error('[BaiduCallingService] 获取主叫号码列表失败:', error.message);
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取主叫号码列表失败: ${error.message}`);
       
       if (error.response) {
-        console.error('[BaiduCallingService] 错误状态码:', error.response.status);
-        console.error('[BaiduCallingService] 错误详情:', JSON.stringify(error.response.data, null, 2));
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${error.response.status}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(error.response.data, null, 2)}`);
       }
       
       // 如果是网络错误且未尝试备用域名，尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名`);
         this.useBackupDomain = true;
         return this.getCallerNumbers(); // 使用备用域名重试
       }
       
       // 出错时返回配置中的默认号码
-      console.warn('[BaiduCallingService] 获取主叫号码失败，使用配置的默认号码');
+      console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取主叫号码失败，使用配置的默认号码`);
       return [this.callerNum];
     }
   }
@@ -240,7 +240,7 @@ export class BaiduCallingService implements NotificationService {
    */
   private async getExistingTask(): Promise<string | null> {
     try {
-      console.log('[BaiduCallingService] 尝试查询现有任务列表');
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 尝试查询现有任务列表`);
       
       // 获取token
       const token = await this.getToken();
@@ -251,7 +251,7 @@ export class BaiduCallingService implements NotificationService {
       // 构建API地址 - 修正为正确的路径格式
       // 从 /apitask/list 改为 /apitask/task/list
       const apiUrl = `${this.getApiBaseUrl()}/apitask/task/list`;
-      console.log(`[BaiduCallingService] 获取任务列表API: ${apiUrl}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取任务列表API: ${apiUrl}`);
       
       // 发送请求 - 修改为POST请求
       try {
@@ -272,16 +272,16 @@ export class BaiduCallingService implements NotificationService {
         );
         
         // 记录响应状态
-        console.log('[BaiduCallingService] 任务列表响应状态:', response.status);
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 任务列表响应状态: ${response.status}`);
         
         // 检查响应是否正确
         if (response.data.code !== 200 || !response.data.data || !response.data.data.list) {
-          console.warn(`[BaiduCallingService] 获取任务列表失败: ${response.data.msg || '未知错误'}`);
+          console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取任务列表失败: ${response.data.msg || '未知错误'}`);
           return null;
         }
         
         const taskList = response.data.data.list;
-        console.log(`[BaiduCallingService] 找到 ${taskList.length} 个任务`);
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 找到 ${taskList.length} 个任务`);
         
         // 查找非完成状态的InfoTrack相关任务
         const infotrackTask = taskList.find((task: any) => {
@@ -291,22 +291,22 @@ export class BaiduCallingService implements NotificationService {
         });
         
         if (infotrackTask) {
-          console.log(`[BaiduCallingService] 找到可用的InfoTrack任务: ID=${infotrackTask.taskId}, 名称=${infotrackTask.taskName}, 状态=${infotrackTask.state || infotrackTask.status}`);
+          console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 找到可用的InfoTrack任务: ID=${infotrackTask.taskId}, 名称=${infotrackTask.taskName}, 状态=${infotrackTask.state || infotrackTask.status}`);
           return infotrackTask.taskId;
         }
         
-        console.log('[BaiduCallingService] 未找到可用的InfoTrack任务，需要创建新任务');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 未找到可用的InfoTrack任务，需要创建新任务`);
         return null;
       } catch (apiError: any) {
         // 特殊处理404错误 - 如果接口不存在，记录但不影响后续流程
         if (apiError.response && apiError.response.status === 404) {
-          console.warn('[BaiduCallingService] 获取任务列表接口不存在(404)，将创建新任务');
+          console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取任务列表接口不存在(404)，将创建新任务`);
         } else {
           // 其他API错误
-          console.error('[BaiduCallingService] 获取任务列表API错误:', apiError.message);
+          console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取任务列表API错误: ${apiError.message}`);
           if (apiError.response) {
-            console.error('[BaiduCallingService] 错误状态码:', apiError.response.status);
-            console.error('[BaiduCallingService] 错误详情:', JSON.stringify(apiError.response.data, null, 2));
+            console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${apiError.response.status}`);
+            console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(apiError.response.data, null, 2)}`);
           }
         }
         // 无论是什么错误，都返回null以允许创建新任务
@@ -314,11 +314,11 @@ export class BaiduCallingService implements NotificationService {
       }
       
     } catch (error: any) {
-      console.error('[BaiduCallingService] 获取任务列表过程失败:', error.message);
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取任务列表过程失败: ${error.message}`);
       
       // 如果是网络错误且未尝试备用域名，尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名`);
         this.useBackupDomain = true;
         return this.getExistingTask(); // 使用备用域名重试
       }
@@ -339,7 +339,7 @@ export class BaiduCallingService implements NotificationService {
     try {
       // 如果已有任务ID且未过期，直接返回
       if (this.taskId && this.taskExpiry > Date.now()) {
-        console.log(`[BaiduCallingService] 复用缓存中的任务 ID: ${this.taskId}, 有效期至: ${new Date(this.taskExpiry).toLocaleString()}`);
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 复用缓存中的任务 ID: ${this.taskId}, 有效期至: ${new Date(this.taskExpiry).toLocaleString()}`);
         return this.taskId;
       }
       
@@ -349,7 +349,7 @@ export class BaiduCallingService implements NotificationService {
         this.taskId = existingTaskId;
         // 设置一个较长的过期时间，但依然定期检查任务是否有效
         this.taskExpiry = Date.now() + (24 * 60 * 60 * 1000); // 24小时后过期
-        console.log(`[BaiduCallingService] 复用外呼平台中的现有任务 ID: ${this.taskId}`);
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 复用外呼平台中的现有任务 ID: ${this.taskId}`);
         return this.taskId;
       }
 
@@ -357,18 +357,18 @@ export class BaiduCallingService implements NotificationService {
       const uniqueId = Date.now().toString() + Math.floor(Math.random() * 1000);
       const uniqueTaskName = `${taskName}_${uniqueId}`;
       
-      console.log(`[BaiduCallingService] 准备创建任务: ${uniqueTaskName}${useSimpleParams ? '(使用简化参数)' : ''}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 准备创建任务: ${uniqueTaskName}${useSimpleParams ? '(使用简化参数)' : ''}`);
       
       // 获取token
       const token = await this.getToken();
       
       // 获取正确的机器人ID
       const { robotId } = await this.getRobotInfo();
-      console.log(`[BaiduCallingService] 使用机器人ID: ${robotId} 创建任务`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 使用机器人ID: ${robotId} 创建任务`);
       
       // 获取可用的主叫号码列表
       const callerNumbers = await this.getCallerNumbers();
-      console.log(`[BaiduCallingService] 使用主叫号码列表: ${callerNumbers.join(', ')}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 使用主叫号码列表: ${callerNumbers.join(', ')}`);
       
       const url = `${this.getApiBaseUrl()}/apitask/create`;
       
@@ -421,8 +421,8 @@ export class BaiduCallingService implements NotificationService {
         delete params.callFinishTaskEnd;
       }
       
-      console.log('[BaiduCallingService] 创建任务请求:', JSON.stringify(params, null, 2));
-      console.log(`[BaiduCallingService] 请求URL: ${url}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 创建任务请求: ${JSON.stringify(params, null, 2)}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求URL: ${url}`);
       
       const response = await axios.post(
         url,
@@ -436,7 +436,7 @@ export class BaiduCallingService implements NotificationService {
         }
       );
       
-      console.log('[BaiduCallingService] 创建任务响应:', JSON.stringify(response.data, null, 2));
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 创建任务响应: ${JSON.stringify(response.data, null, 2)}`);
       
       if (response.data.code !== 200 || !response.data.data || !response.data.data.taskId) {
         throw new Error(`创建任务失败: ${response.data.msg || '未知错误'}`);
@@ -445,36 +445,36 @@ export class BaiduCallingService implements NotificationService {
       this.taskId = response.data.data.taskId;
       // 设置任务缓存有效期为24小时，之后会再次检查任务是否存在
       this.taskExpiry = Date.now() + (24 * 60 * 60 * 1000);
-      console.log(`[BaiduCallingService] 成功创建长期任务, ID: ${this.taskId}, 有效期一年`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 成功创建长期任务, ID: ${this.taskId}, 有效期一年`);
       return this.taskId;
       
     } catch (error: any) {
-      console.error('[BaiduCallingService] 创建外呼任务失败');
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 创建外呼任务失败`);
       
       if (error.response) {
-        console.error('[BaiduCallingService] 错误状态码:', error.response.status);
-        console.error('[BaiduCallingService] 错误详情:', JSON.stringify(error.response.data, null, 2));
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${error.response.status}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(error.response.data, null, 2)}`);
         
         // 处理任务名称重复错误
         if (error.response.data?.code === 4006412 && retryCount < 3) {
-          console.log('[BaiduCallingService] 任务名称重复，尝试使用新的任务名称重试');
+          console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 任务名称重复，尝试使用新的任务名称重试`);
           return this.createTask(taskName, useSimpleParams, retryCount + 1); // 递归调用，使用新的唯一名称
         }
         
         // 处理500错误 - 服务器内部错误
         if (error.response.status === 500 && !useSimpleParams) {
-          console.log('[BaiduCallingService] 遇到服务器500错误，尝试使用简化参数重新创建任务');
+          console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 遇到服务器500错误，尝试使用简化参数重新创建任务`);
           return this.createTask(taskName, true, retryCount); // 递归调用，使用简化参数重试
         }
       } else if (error.request) {
-        console.error('[BaiduCallingService] 请求已发送但未收到响应');
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求已发送但未收到响应`);
       } else {
-        console.error('[BaiduCallingService] 错误:', error.message);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误: ${error.message}`);
       }
       
       // 检查是否是域名解析错误，如果是且未尝试备用域名，则尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名重试请求');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名重试请求`);
         this.useBackupDomain = true;
         return this.createTask(taskName, useSimpleParams, retryCount); // 递归调用，使用备用域名重试
       }
@@ -502,8 +502,8 @@ export class BaiduCallingService implements NotificationService {
       );
       
       // 打印原始号码和有效号码，便于调试
-      console.log(`[BaiduCallingService] 原始号码: ${JSON.stringify(phoneNumbers)}`);
-      console.log(`[BaiduCallingService] 有效号码: ${JSON.stringify(validPhones)}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 原始号码: ${JSON.stringify(phoneNumbers)}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 有效号码: ${JSON.stringify(validPhones)}`);
       
       // 如果没有有效号码，直接返回
       if (validPhones.length === 0) {
@@ -515,13 +515,13 @@ export class BaiduCallingService implements NotificationService {
         };
       }
       
-      console.log(`[BaiduCallingService] 准备导入 ${validPhones.length} 个电话号码到任务 ${taskId}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 准备导入 ${validPhones.length} 个电话号码到任务 ${taskId}`);
       
       // 获取token
       const token = await this.getToken();
       
       const url = `${this.getApiBaseUrl()}/apitask/import`;
-      console.log(`[BaiduCallingService] 导入名单API地址: ${url}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 导入名单API地址: ${url}`);
       
       // 构建请求参数 - 修改为符合API文档格式
       const params = {
@@ -533,14 +533,14 @@ export class BaiduCallingService implements NotificationService {
         }))
       };
       
-      console.log('[BaiduCallingService] 导入名单请求:', JSON.stringify({
-        taskId,
-        secretType: params.secretType,
-        customerInfoListCount: params.customerInfoList.length
-      }, null, 2));
+      // console.log('[BaiduCallingService] 导入名单请求:', JSON.stringify({
+      //   taskId,
+      //   secretType: params.secretType,
+      //   customerInfoListCount: params.customerInfoList.length
+      // }, null, 2));
       
-      // 添加完整的请求体日志，便于调试
-      console.log('[BaiduCallingService] 完整请求体:', JSON.stringify(params, null, 2));
+      // // 添加完整的请求体日志，便于调试
+      // console.log('[BaiduCallingService] 完整请求体:', JSON.stringify(params, null, 2));
       
       const response = await axios.post(
         url,
@@ -554,15 +554,15 @@ export class BaiduCallingService implements NotificationService {
         }
       );
       
-      console.log('[BaiduCallingService] 导入名单响应:', JSON.stringify({
-        code: response.data.code,
-        msg: response.data.msg,
-        successNum: response.data.data?.successNum,
-        failedNum: response.data.data?.failedNum
-      }, null, 2));
+      // console.log('[BaiduCallingService] 导入名单响应:', JSON.stringify({
+      //   code: response.data.code,
+      //   msg: response.data.msg,
+      //   successNum: response.data.data?.successNum,
+      //   failedNum: response.data.data?.failedNum
+      // }, null, 2));
       
       // 添加完整响应日志
-      console.log('[BaiduCallingService] 完整响应体:', JSON.stringify(response.data, null, 2));
+      // console.log('[BaiduCallingService] 完整响应体:', JSON.stringify(response.data, null, 2));
       
       if (response.data.code !== 200) {
         throw new Error(`导入名单失败: ${response.data.msg || '未知错误'}`);
@@ -582,16 +582,16 @@ export class BaiduCallingService implements NotificationService {
           } else {
             failedPhones.push(phone);
             // 记录失败原因
-            console.warn(`[BaiduCallingService] 号码 ${phone} 导入失败: ${item.reason || '未知原因'}`);
+            console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 号码 ${phone} 导入失败: ${item.reason || '未知原因'}`);
           }
         });
       }
       
-      console.log(`[BaiduCallingService] 导入名单完成: 成功 ${result.successNum} 个, 失败 ${result.failedNum} 个`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 导入名单完成: 成功 ${result.successNum} 个, 失败 ${result.failedNum} 个`);
       
       // 如果返回成功数量与成功解析的号码数量不一致，记录警告
       if (successPhones.length !== result.successNum) {
-        console.warn(`[BaiduCallingService] 警告: API返回的成功数量(${result.successNum})与解析到的成功数量(${successPhones.length})不一致`);
+        console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 警告: API返回的成功数量(${result.successNum})与解析到的成功数量(${successPhones.length})不一致`);
       }
       
       return {
@@ -602,33 +602,33 @@ export class BaiduCallingService implements NotificationService {
       };
       
     } catch (error: any) {
-      console.error('[BaiduCallingService] 导入电话号码名单失败');
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 导入电话号码名单失败`);
       
       if (error.response) {
-        console.error('[BaiduCallingService] 错误状态码:', error.response.status);
-        console.error('[BaiduCallingService] 错误详情:', JSON.stringify(error.response.data, null, 2));
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${error.response.status}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(error.response.data, null, 2)}`);
         
         // 添加特定错误码处理
         if (error.response.data?.code) {
           const errorCode = error.response.data.code;
           // 判断是否是常见错误
           if (errorCode === 4006413) {
-            console.error('[BaiduCallingService] 任务已满或已关闭，无法导入');
+            console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 任务已满或已关闭，无法导入`);
           } else if (errorCode === 4006412) {
-            console.error('[BaiduCallingService] 任务不存在或已删除');
+            console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 任务不存在或已删除`);
           } else if (errorCode === 4006432) {
-            console.error('[BaiduCallingService] 导入号码格式错误');
+            console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 导入号码格式错误`);
           }
         }
       } else if (error.request) {
-        console.error('[BaiduCallingService] 请求已发送但未收到响应');
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求已发送但未收到响应`);
       } else {
-        console.error('[BaiduCallingService] 错误:', error.message);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误: ${error.message}`);
       }
       
       // 检查是否是域名解析错误，如果是且未尝试备用域名，则尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名重试请求');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名重试请求`);
         this.useBackupDomain = true;
         return this.importPhoneNumbers(taskId, phoneNumbers); // 使用备用域名重试
       }
@@ -668,7 +668,7 @@ export class BaiduCallingService implements NotificationService {
         };
       }
       
-      console.log(`[BaiduCallingService] 尝试将 ${validPhones.length} 个号码添加到白名单`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 尝试将 ${validPhones.length} 个号码添加到白名单`);
       
       // 创建任务
       const taskId = await this.createTask("InfoTrack通知白名单任务");
@@ -686,11 +686,11 @@ export class BaiduCallingService implements NotificationService {
       
       // 添加详细的成功/失败日志
       if (result.successNum > 0) {
-        console.log(`[BaiduCallingService] 成功导入 ${result.successNum} 个号码: ${result.successPhones.join(', ')}`);
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 成功导入 ${result.successNum} 个号码: ${result.successPhones.join(', ')}`);
       }
       
       if (result.failedNum > 0) {
-        console.warn(`[BaiduCallingService] ${result.failedNum} 个号码导入失败: ${result.failedPhones.join(', ')}`);
+        console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] ${result.failedNum} 个号码导入失败: ${result.failedPhones.join(', ')}`);
       }
       
       return {
@@ -700,11 +700,11 @@ export class BaiduCallingService implements NotificationService {
       };
       
     } catch (error: any) {
-      console.error('[BaiduCallingService] 添加电话号码到白名单失败:', error.message);
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 添加电话号码到白名单失败: ${error.message}`);
       
       // 记录堆栈信息便于调试
       if (error.stack) {
-        console.error('[BaiduCallingService] 错误堆栈:', error.stack);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误堆栈: ${error.stack}`);
       }
       
       // 失败时仍然返回一个看似成功的结果，让外呼过程继续
@@ -738,7 +738,7 @@ export class BaiduCallingService implements NotificationService {
       
       // 构建获取机器人列表的API地址
       const robotListUrl = `${this.getApiBaseUrl().replace('/api/v3/console', '/api/v1/robot/list')}`;
-      console.log(`[BaiduCallingService] 获取机器人列表: ${robotListUrl}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取机器人列表: ${robotListUrl}`);
       
       const response = await axios.get(
         robotListUrl,
@@ -751,7 +751,7 @@ export class BaiduCallingService implements NotificationService {
         }
       );
       
-      console.log('[BaiduCallingService] 机器人列表响应:', JSON.stringify(response.data, null, 2));
+      // console.log('[BaiduCallingService] 机器人列表响应:', JSON.stringify(response.data, null, 2));
       
       // 修正检查条件，使用data.list而不是data.robots
       if (response.data.code !== 200 || !response.data.data || !Array.isArray(response.data.data.list)) {
@@ -768,13 +768,13 @@ export class BaiduCallingService implements NotificationService {
       
       if (!infotrackRobot) {
         // 如果找不到匹配的机器人，记录所有可用机器人
-        console.warn('[BaiduCallingService] 未找到名为"infotrack"的机器人，可用机器人列表:');
+        console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 未找到名为"infotrack"的机器人，可用机器人列表:`);
         robots.forEach((robot: any, index: number) => {
           console.warn(`[${index+1}] ID: ${robot.robotId}, 名称: ${robot.robotName}`);
         });
         
         // 尝试使用配置中的robotId
-        console.log(`[BaiduCallingService] 使用配置的robotId: ${this.robotId}`);
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 使用配置的robotId: ${this.robotId}`);
         
         // 缓存结果
         this.cachedRobotInfo = { robotId: this.robotId };
@@ -782,7 +782,7 @@ export class BaiduCallingService implements NotificationService {
         return { robotId: this.robotId };
       }
       
-      console.log(`[BaiduCallingService] 找到机器人: ID=${infotrackRobot.robotId}, 名称=${infotrackRobot.robotName}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 找到机器人: ID=${infotrackRobot.robotId}, 名称=${infotrackRobot.robotName}`);
       
       // 缓存结果
       this.cachedRobotInfo = { 
@@ -793,22 +793,22 @@ export class BaiduCallingService implements NotificationService {
       return { robotId: infotrackRobot.robotId };
       
     } catch (error: any) {
-      console.error('[BaiduCallingService] 获取机器人信息失败', error.message);
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 获取机器人信息失败 ${error.message}`);
       
       if (error.response) {
-        console.error('[BaiduCallingService] 错误状态码:', error.response.status);
-        console.error('[BaiduCallingService] 错误详情:', JSON.stringify(error.response.data, null, 2));
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${error.response.status}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(error.response.data, null, 2)}`);
       }
       
       // 如果是网络错误且未尝试备用域名，尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名`);
         this.useBackupDomain = true;
         return this.getRobotInfo(); // 使用备用域名重试
       }
       
       // 如果无法获取，使用配置的robotId
-      console.warn('[BaiduCallingService] 无法获取机器人信息，使用配置的robotId');
+      console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 无法获取机器人信息，使用配置的robotId`);
       return { robotId: this.robotId };
     }
   }
@@ -823,30 +823,30 @@ export class BaiduCallingService implements NotificationService {
     try {
       const phoneNumber = payload.userId;
       if (!phoneNumber || !/^1\d{10}$/.test(phoneNumber)) {
-        console.warn(`[BaiduCallingService] 无效的电话号码: ${phoneNumber}`);
+        console.warn(`[BaiduCallingService ${toBeiJingTime(new Date())}] 无效的电话号码: ${phoneNumber}`);
         return;
       }
 
       // 确保电话号码已添加到白名单
       await this.ensurePhoneInWhitelist([phoneNumber]);
 
-      console.log(`[BaiduCallingService] 准备向 ${phoneNumber} 发送外呼通知`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 准备向 ${phoneNumber} 发送外呼通知`);
       
       // 获取token
       const token = await this.getToken();
-      console.log(`[BaiduCallingService] 成功获取token: ${token.substring(0, 20)}...`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 成功获取token: ${token.substring(0, 20)}...`);
       
       // 获取正确的机器人ID，不再获取座席ID
       const { robotId } = await this.getRobotInfo();
-      console.log(`[BaiduCallingService] 使用机器人ID: ${robotId}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 使用机器人ID: ${robotId}`);
       
       // 获取可用的主叫号码列表
       const callerNumbers = await this.getCallerNumbers();
-      console.log(`[BaiduCallingService] 使用主叫号码列表: ${callerNumbers.join(', ')}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 使用主叫号码列表: ${callerNumbers.join(', ')}`);
       
       // 百度智能外呼平台实时调用接口 (v3版本)
       const callUrl = `${this.getApiBaseUrl()}/realtime/status/create`;
-      console.log(`[BaiduCallingService] 调用外呼API: ${callUrl}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 调用外呼API: ${callUrl}`);
       
       const matchCount = payload.metadata?.matchCount || 1;
       const ruleName = payload.metadata?.ruleName || '';
@@ -864,11 +864,11 @@ export class BaiduCallingService implements NotificationService {
         }
       };
       
-      console.log('[BaiduCallingService] 发送外呼请求:', JSON.stringify(callParams, null, 2));
-      console.log('[BaiduCallingService] 请求头:', JSON.stringify({
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 发送外呼请求: ${JSON.stringify(callParams, null, 2)}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求头: ${JSON.stringify({
         'Content-Type': 'application/json',
         'Authorization': token.substring(0, 10) + '...'  // 只记录部分token内容，保护隐私，移除Bearer前缀
-      }, null, 2));
+      }, null, 2)}`);
       
       const response = await axios.post(
         callUrl,
@@ -882,8 +882,8 @@ export class BaiduCallingService implements NotificationService {
         }
       );
       
-      console.log('[BaiduCallingService] 外呼响应状态:', response.status);
-      console.log('[BaiduCallingService] 外呼响应:', JSON.stringify(response.data, null, 2));
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 外呼响应状态: ${response.status}`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 外呼响应: ${JSON.stringify(response.data, null, 2)}`);
       
       // 根据百度文档，成功响应code为200
       if (response.data.code !== 200) {
@@ -892,23 +892,23 @@ export class BaiduCallingService implements NotificationService {
       
       // 获取返回的ID信息
       const responseData = response.data.data;
-      console.info(`[BaiduCallingService] 成功呼叫用户 ${phoneNumber}，响应数据:`, responseData);
+      console.info(`[BaiduCallingService ${toBeiJingTime(new Date())}] 成功呼叫用户 ${phoneNumber}，响应数据:`, responseData);
     } catch (error: any) {
-      console.error('[BaiduCallingService] 百度智能外呼失败');
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 百度智能外呼失败`);
       
       // 增加详细错误日志
       if (error.response) {
-        console.error('[BaiduCallingService] 错误状态码:', error.response.status);
-        console.error('[BaiduCallingService] 错误详情:', JSON.stringify(error.response.data, null, 2));
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误状态码: ${error.response.status}`);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误详情: ${JSON.stringify(error.response.data, null, 2)}`);
       } else if (error.request) {
-        console.error('[BaiduCallingService] 请求已发送但未收到响应');
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 请求已发送但未收到响应`);
       } else {
-        console.error('[BaiduCallingService] 错误:', error.message);
+        console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 错误: ${error.message}`);
       }
       
       // 检查是否是域名解析错误，如果是且未尝试备用域名，则尝试切换到备用域名
       if ((error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') && !this.useBackupDomain) {
-        console.log('[BaiduCallingService] 主域名无法访问，尝试使用备用域名重试请求');
+        console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 主域名无法访问，尝试使用备用域名重试请求`);
         this.useBackupDomain = true;
         return this.send(payload); // 使用备用域名重试
       }
@@ -927,9 +927,9 @@ export class BaiduCallingService implements NotificationService {
           data: { lastProcessedTweetId: tweetId }
         });
       }
-      console.log('[BaiduCallingService] 已持久化所有规则的最后处理推文ID');
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 已持久化所有规则的最后处理推文ID`);
     } catch (error) {
-      console.error('[BaiduCallingService] 持久化推文ID失败:', error);
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 持久化推文ID失败: ${error}`);
     }
   }
   
@@ -946,9 +946,9 @@ export class BaiduCallingService implements NotificationService {
           this.lastTweetIds.set(rule.id, rule.lastProcessedTweetId);
         }
       }
-      console.log(`[BaiduCallingService] 已从数据库加载 ${this.lastTweetIds.size} 个规则的推文ID`);
+      console.log(`[BaiduCallingService ${toBeiJingTime(new Date())}] 已从数据库加载 ${this.lastTweetIds.size} 个规则的推文ID`);
     } catch (error) {
-      console.error('[BaiduCallingService] 加载推文ID失败:', error);
+      console.error(`[BaiduCallingService ${toBeiJingTime(new Date())}] 加载推文ID失败: ${error}`);
     }
   }
 }

@@ -5,22 +5,23 @@
 
 // 导入 boot 模块
 import { setupAutoInitialization } from '@/services/tracking/boot';
+import { toBeiJingTime } from '@/services/twitter';
 
 // 设置服务启动时间
 const SERVER_START_TIME = Date.now();
 
 // 记录日志
-console.log(`[ServerInit] 服务器启动时间: ${new Date(SERVER_START_TIME).toISOString()}`);
-console.log('[ServerInit] 服务器初始化模块已加载');
+console.log(`[ServerInit ${toBeiJingTime(new Date())}] 服务器启动时间: ${new Date(SERVER_START_TIME).toISOString()}`);
+console.log(`[ServerInit ${toBeiJingTime(new Date())}] 服务器初始化模块已加载`);
 
 // 检查是否在构建阶段
 const isBuildTime = process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL;
 if (isBuildTime) {
-  console.log('[ServerInit] 检测到在构建阶段，跳过自动初始化设置');
+  console.log(`[ServerInit ${toBeiJingTime(new Date())}] 检测到在构建阶段，跳过自动初始化设置`);
 } else {
   // 非构建阶段，正常设置自动初始化
   setupAutoInitialization();
-  console.log('[ServerInit] 自动初始化已设置');
+  console.log(`[ServerInit ${toBeiJingTime(new Date())}] 自动初始化已设置`);
 }
 
 // 导出服务器启动时间，以便其他模块使用

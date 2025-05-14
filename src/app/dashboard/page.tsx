@@ -1,5 +1,9 @@
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
+import { SystemAdminPanel } from "@/components/SystemAdminPanel";
+
+// 管理员邮箱列表
+const ADMIN_EMAILS = ['admin@example.com', 'alanhu1024@gmail.com']; // 替换为实际管理员邮箱
 
 export default async function DashboardPage() {
   const session = await getServerSession();
@@ -7,6 +11,9 @@ export default async function DashboardPage() {
   if (!session) {
     redirect("/auth/login");
   }
+  
+  // 检查用户是否是管理员
+  const isAdmin = session.user?.email && ADMIN_EMAILS.includes(session.user.email);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -109,6 +116,9 @@ export default async function DashboardPage() {
           </a>
         </div>
       </div>
+      
+      {/* 系统管理面板 - 仅管理员可见 */}
+      {isAdmin && <SystemAdminPanel />}
     </div>
   );
 } 

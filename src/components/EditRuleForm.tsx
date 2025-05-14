@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import type { TrackingRule, TrackingTimeSlot } from '@/types.ts';
 import { TimeSlotEditor } from './TimeSlotEditor';
+import { useSession } from 'next-auth/react';
 
 interface EditRuleFormProps {
   rule: TrackingRule & { 
@@ -22,8 +23,12 @@ const POLLING_INTERVALS = [
   { value: 43200, label: '12小时' },
 ] as const;
 
+// 管理员邮箱列表 - 应与后端保持一致
+const ADMIN_EMAILS = [process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin@example.com'];
+
 export default function EditRuleForm({ rule }: EditRuleFormProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -42,6 +47,9 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
   });
   const [isForceStoppingPolling, setIsForceStoppingPolling] = useState(false);
   const [isResettingNotification, setIsResettingNotification] = useState(false);
+  
+  // 检查用户是否为管理员
+  const isAdmin = session?.user?.email && ADMIN_EMAILS.includes(session.user.email);
 
   useEffect(() => {
     if (pendingActionRef.current && sessionChecked) {
@@ -489,7 +497,7 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
                 : (formData.isActive ? '停用规则' : '启用规则')}
             </button>
             
-            {formData.isActive && (
+            {isAdmin && formData.isActive && (
               <button
                 type="button"
                 onClick={handleForceStopPolling}
@@ -500,14 +508,16 @@ export default function EditRuleForm({ rule }: EditRuleFormProps) {
               </button>
             )}
             
-            <button
-              type="button"
-              onClick={handleResetNotification}
-              disabled={isResettingNotification}
-              className="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {isResettingNotification ? '处理中...' : '重置通知状态'}
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleResetNotification}
+                disabled={isResettingNotification}
+                className="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {isResettingNotification ? '处理中...' : '重置通知状态'}
+              </button>
+            )}
             
             <button
               type="button"
